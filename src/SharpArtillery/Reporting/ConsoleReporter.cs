@@ -19,11 +19,6 @@ internal static class ConsoleReporter
         Console.Write($"Completed# {completedTasks.Count} - ");
         Console.Write($"Concurrent# {tasks.Count} - ");
         Console.Write($"Rate# {requestRate}\n");
-
-        // for (var i = emitBuffer.Count - 1; i >= 0; i--)
-        // {
-        //     Console.WriteLine(emitBuffer[i] + "                    ");
-        // }
     }
 
     public static void Init((int Left, int Top) initPos)
@@ -35,16 +30,5 @@ internal static class ConsoleReporter
     public static void Emit(string s)
     {
         Debug.WriteLine(s);
-        // Console.WriteLine(s);
-        // switch (emitBuffer.Count)
-        // {
-        //     case < 10:
-        //         emitBuffer.Add(s);
-        //         break;
-        //     default:
-        //         emitBuffer.RemoveAt(0);
-        //         emitBuffer.Add(s);
-        //         break;
-        // }
     }
 }

@@ -115,6 +115,7 @@ namespace SharpArtillery
             switch (report.Extension)
             {
                 case ".xlsx":
+                    // TODO: enable excel reporting again
                     throw new NotImplementedException();
                     // MyExcel.Create(outputPath, requests);
                     break;
