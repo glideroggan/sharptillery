@@ -38,7 +38,6 @@ internal class Client
             var req = await _manager.GetRequestMessageAsync();
             if (req == null)
             {
-                Debug.Assert(_manager.RequestQueue.IsEmpty);
                 _manager.ClientDone(_id);
                 _privateKillTokenSource.Cancel();
                 continue;

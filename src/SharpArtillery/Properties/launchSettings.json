@@ -3,7 +3,7 @@
     "SharpArtillery": {
       "commandName": "Project",
       //"commandLineArgs": "-y config_local.yaml -t http://localhost/test/get"
-      "commandLineArgs": "-d 00:00:05 -c 1 -r 10 -t http://localhost/test/get -h x-roger:test -h x-roger2:igen"
+      "commandLineArgs": "-d 00:00:05 -c 1 -r 10 -t http://localhost/test/get"
 //      "commandLineArgs": "-t https://familyhome-api.azurewebsites.net/api/Garbage/scores?sinceDate=2022-01-01 -o report -e html"
 //      "commandLineArgs": "-y config_local.yaml -o report"
 //      "commandLineArgs": "-t https://familyhome-api.azurewebsites.net/api/Garbage/scores?sinceDate=2022-01-01 -n 300 -c 10"

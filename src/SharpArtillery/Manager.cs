@@ -21,9 +21,9 @@ namespace SharpArtillery;
  *      Maybe we can try starting each client with its own thread? Just to see if latency would go down.
  *          If it does, it probably means that a thread would get more scheduling time from cpu than a task does
  * TODO:
- *  dotnet tooling
- *      - get it working as a dotnet tool
  *  Reporting:
+ *      - take snapshots at 1s and in the reporting graph we can average all values
+ *          this way we get a nicer graph
  *      - Add target endpoint targeted
  *      - Add the main things about a load test (https://www.freecodecamp.org/news/practical-guide-to-load-testing/)
  *          into the table of the html report
@@ -40,7 +40,6 @@ internal enum FlagEnum
 internal class Manager : IDisposable
 {
     private readonly CancellationTokenSource _internalCancellationTokenSource;
-    internal readonly ConcurrentQueue<HttpRequestMessage> RequestQueue = new();
     private readonly ConcurrentQueue<Data> _requestResultsQueue = new();
     private bool _done;
     private readonly List<Data> _responseData = new();
@@ -153,7 +152,7 @@ internal class Manager : IDisposable
                 continue;
             }
 
-            // TODO: dequeue responses and process them
+            // dequeue responses and process them
             if (_requestResultsQueue.TryDequeue(out var results))
             {
                 // TODO: don't forget to handle non-OK responses
