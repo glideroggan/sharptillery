@@ -1,0 +1,17 @@
+﻿settings:
+  target: "http://localhost"
+#  target: "https://familyhome-api.azurewebsites.net"
+#  target: "https://blank.org"
+  report: "html"
+  # Different phases
+  phases:
+    - vu: 10               # VU (virtual users)
+      requests: 10000       # requests (maximum number of requests, split between vu)
+
+scenarios:
+  - name: "Load test"
+    flow:
+      - get:
+#          url: "/"
+          url: "/test/get"
+#          url: "/api/Garbage/scores?sinceDate=2022-01-01"

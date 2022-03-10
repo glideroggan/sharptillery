@@ -1,0 +1,130 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!--  -->
+    <!--  -->
+    <!--
+[
+    {"time": 0, "latency": 10, "requestRate": 10,"phase":"warm up"},
+    {"time": 1, "latency": 12.3, "requestRate": 10,"phase":"warm up"},
+    {"time": 2, "latency": 15.9112, "requestRate": 10,"phase":"warm up"},
+    {"time": 3, "latency": 10, "requestRate": 15,"phase":"Ramp up"},
+    {"time": 4, "latency": 18.3, "requestRate": 20,"phase":"Ramp up"},
+    {"time": 5, "latency": 25.9112, "requestRate": 25,"phase":"Ramp up"}
+]     
+    -->
+    <script id="data" type="application/json">
+        <# PUT DATA HERE #>
+    </script>
+<!--    <script id="settings" type="application/json">-->
+<!--        <# PUT SETTINGS HERE #>-->
+<!--    </script>-->
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <script type="text/javascript">
+        google.charts.load('current', {'packages':['line', 'scatter', 'corechart', 'table']});
+        google.charts.setOnLoadCallback(drawAll);
+
+        const groupBy = function (xs, key) {
+            return xs.reduce(function (rv, x) {
+                (rv[x[key]] = rv[x[key]] || []).push(x);
+                return rv;
+            }, {});
+        };
+
+        // add graph that tells information about test
+        function drawTable() {
+            let data = new google.visualization.DataTable();
+            data.addColumn('string', 'Property');
+            data.addColumn('number', 'Value');
+            
+            let dataRows = JSON.parse(document.getElementById('data').textContent);
+            
+            // get the data and group them after phase, and compute average latency
+            let groupedByPhase = groupBy(dataRows, 'phase');
+            // console.log(groupedByPhase);
+            const average = (groupedByPhase, phase) => 
+                groupedByPhase[phase].reduce((previous, current) => previous + current['latency'], 0) 
+                / groupedByPhase[phase].length;
+            // console.log("average: ", average(groupedByPhase, 'warm up'));
+            let rows = [];
+            for (const prop in groupedByPhase) {
+                let item = [];
+                item.push(prop);
+                item.push(average(groupedByPhase, prop));
+                rows.push(item);
+            }
+            
+            data.addRows(rows);
+            
+            var table = new google.visualization.Table(document.getElementById('table_div'));
+
+            table.draw(data, {showRowNumber: false, width: '50%', height: '100%'});
+        }
+        
+        function drawMainChart() {
+            let data = new google.visualization.DataTable();
+            data.addColumn('number', 'Time');
+            data.addColumn('number', 'Latency');
+            data.addColumn('number', 'Rps');
+
+            let rows = JSON.parse(document.getElementById('data').textContent);
+            // check settings if a specific phase should not be included in the main graph
+            // const settings = JSON.parse(document.getElementById('settings').textContent);
+            // const phases = settings['phases'].map(r => {
+            //     return {phaseName:r['name'], excludedGraph: r['excludeGraph']} 
+            // });
+            // let validRows = rows.filter(row => {
+            //     let phase = phases.find(e => e.phaseName === row['phase']);
+            //     return phase.excludedGraph === false;
+            // });
+                
+            // Remove unwanted columns, as we want the data script to contain everything
+            data.addRows(rows.map(o => {
+                return [o['time'], o['latency'], o['rps']]
+            }));
+
+            let chartDiv = document.getElementById('linechart_material')
+
+            var options = {
+                chart: {
+                    title: 'Latency vs Rps',
+                    subtitle: '<# ENDPOINT #>'
+                },
+                width: 1600,
+                height: 500,
+                series: {
+                    0: { 
+                        type: 'scatter',
+                        targetAxisIndex:0,
+                        axis: 'Latency'
+                    },
+                    1: {
+                        type: 'line',
+                        targetAxisIndex:1,
+                        axis: 'Rps'
+                    }
+                },
+                vAxes: {
+                    0: {title: 'Latency (ms)'},
+                    1: {title: 'Rps'},
+                }
+            };
+
+            // const materialChart = new google.charts.Line(chartDiv);
+            const materialChart = new google.visualization.LineChart(chartDiv);
+            materialChart.draw(data, options);
+        }
+        
+        function drawAll() {
+            drawMainChart();
+            drawTable();
+        }
+    </script>
+</head>
+<body>
+    <div id="linechart_material"></div>
+    <div id="table_div"></div>
+</body>
+</html>

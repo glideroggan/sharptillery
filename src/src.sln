@@ -1,0 +1,36 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31825.309
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SharpArtillery", "SharpArtillery\SharpArtillery.csproj", "{0C337FE7-B729-41ED-AB40-C2D7CA8A7632}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "testapi", "testapi\testapi.csproj", "{F276707D-E1CF-4A2C-9ED3-EC4C33578A13}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{F773804E-EAB6-4358-93C3-6C24D4202748}"
+	ProjectSection(SolutionItems) = preProject
+		..\info.txt = ..\info.txt
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{0C337FE7-B729-41ED-AB40-C2D7CA8A7632}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0C337FE7-B729-41ED-AB40-C2D7CA8A7632}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0C337FE7-B729-41ED-AB40-C2D7CA8A7632}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0C337FE7-B729-41ED-AB40-C2D7CA8A7632}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F276707D-E1CF-4A2C-9ED3-EC4C33578A13}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F276707D-E1CF-4A2C-9ED3-EC4C33578A13}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F276707D-E1CF-4A2C-9ED3-EC4C33578A13}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F276707D-E1CF-4A2C-9ED3-EC4C33578A13}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {573948B1-6084-4D54-930D-72377C07F891}
+	EndGlobalSection
+EndGlobal
