@@ -13,6 +13,11 @@ namespace SharpArtillery
         {
             // read arguments
             var parser = new FlagParser<ArtilleryConfig>()
+                .AddFlag('h', (val, c) =>
+                {
+                    var values = val.Split(':');
+                    c.Headers.Add(values[0], values[1]);
+                })
                 .AddFlag('n', (val, c) => c.MaxRequests = int.Parse(val, CultureInfo.InvariantCulture))
                 .AddFlag('r', (val, c) => c.ConstantRps = int.Parse(val, CultureInfo.InvariantCulture),
                     'n')
@@ -44,10 +49,9 @@ namespace SharpArtillery
             var config = flags.YamlConfig;
 
             // if flags are good and no yaml, we should still be running
-            if (config == null && flags.Target == null)
-            {
-                // TODO: show use, continue here
-                Console.Out.WriteLine(@"
+            if (config != null || flags.Target != null) return flags;
+            
+            Console.Out.WriteLine(@"
 Sharptillery -t https://blank.org -c 1 -n 100
     Will send 100 requests (max) towards blank.org using one virtual user
 Sharptillery -t https://blank.org -c 10 -d 00:00:10 -o report
@@ -61,11 +65,10 @@ Flags:
 -r <number>         : Requests per second, the program will try to uphold this number of requests.
 -o <name of report> : Outputs a report with name <name of report> in html (default)
 -e <report type>    : Type of report (html/excel)
--y <yaml config>    : The yaml config file to read instead of command flags");
-                return null;
-            }
+-y <yaml config>    : The yaml config file to read instead of command flags
+-h <name:value>     : Add default header to each request. You can reuse the flag multiple times");
+            return null;
 
-            return flags;
         }
     }
     public class FlagParser<T> where T : class, new()
@@ -85,13 +88,16 @@ Flags:
             var usedFlags = new List<KeyValuePair<char, (Action<string, T> Callback, char[]? Exclusivness)>>();
             foreach (var flag in flags)
             {
-                var regStr = $"-{flag.Key}\\s([^\\s]*)\\s*";
+                var regStr = $"-{flag.Key}\\s([^\\s]*)";
                 var targetRegex = new Regex(regStr, RegexOptions.ECMAScript | RegexOptions.IgnoreCase);
-                var match = targetRegex.Match(arguments);
-                if (!match.Success) continue;
-                
-                usedFlags.Add(flag);
-                flag.Value.Callback(match.Groups[1].Value, res);
+                var matches = targetRegex.Matches(arguments);
+                foreach (Match match in matches)
+                {
+                    if (!match.Success) continue;
+                    
+                    usedFlags.Add(flag);
+                    flag.Value.Callback(match.Groups[1].Value, res);    
+                }
             }
 
             // check exclusiveness

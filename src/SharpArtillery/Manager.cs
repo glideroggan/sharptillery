@@ -77,8 +77,6 @@ internal class Manager : IDisposable
     private CancellationTokenSource ClientCancellationTokenSource { get; }
     public CancellationToken ClientKillToken => ClientCancellationTokenSource.Token;
 
-    
-
 
     public async Task<HttpRequestMessage?> GetRequestMessageAsync()
     {

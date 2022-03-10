@@ -22,7 +22,7 @@ namespace SharpArtillery
             var flags = ProgramSettings.HandleConfigsAndSettings(args);
             if (flags == null) return;
 
-            var httpClientFactory = new CustomHttpClientFactory(null, FactoryEnum.Roger);
+            var httpClientFactory = new CustomHttpClientFactory(null, FactoryEnum.Roger, flags);
 
 
             // do we have phases?
@@ -167,6 +167,7 @@ namespace SharpArtillery
         public int Clients { get; set; }
         public Report Report { get; } = new();
         public int ConstantRps { get; set; }
+        public Dictionary<string, string> Headers { get; set; } = new();
     }
 
     public class Report

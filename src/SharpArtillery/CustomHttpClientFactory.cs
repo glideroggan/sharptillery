@@ -15,7 +15,8 @@ internal class CustomHttpClientFactory : ICustomHttpClientFactory, IDisposable
     private readonly FactoryEnum _factory;
     private HttpClient _con;
 
-    public CustomHttpClientFactory(IHttpClientFactory httpClientFactory, FactoryEnum factory)
+    public CustomHttpClientFactory(IHttpClientFactory httpClientFactory, FactoryEnum factory,
+        ArtilleryConfig settings)
     {
         _httpClientFactory = httpClientFactory;
         _factory = factory;
@@ -32,6 +33,10 @@ internal class CustomHttpClientFactory : ICustomHttpClientFactory, IDisposable
                     MaxConnectionsPerServer = 200,
                 };
                 _con = new HttpClient(socketHandler, true);
+                foreach (var (name, val) in settings.Headers)
+                {
+                    _con.DefaultRequestHeaders.Add(name, val);
+                }
                 break;
             default:
                 throw new ArgumentOutOfRangeException();
