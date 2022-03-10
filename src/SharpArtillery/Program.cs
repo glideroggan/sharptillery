@@ -20,6 +20,7 @@ namespace SharpArtillery
         public static async Task Main(string[] args)
         {
             var flags = ProgramSettings.HandleConfigsAndSettings(args);
+            if (flags == null) return;
 
             var httpClientFactory = new CustomHttpClientFactory(null, FactoryEnum.Roger);
 

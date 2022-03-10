@@ -9,7 +9,7 @@ namespace SharpArtillery
 {
     internal static class ProgramSettings
     {
-        internal static ArtilleryConfig HandleConfigsAndSettings(string[] args)
+        internal static ArtilleryConfig? HandleConfigsAndSettings(string[] args)
         {
             // read arguments
             var parser = new FlagParser<ArtilleryConfig>()
@@ -47,7 +47,22 @@ namespace SharpArtillery
             if (config == null && flags.Target == null)
             {
                 // TODO: show use, continue here
-                throw new NotImplementedException();
+                Console.Out.WriteLine(@"
+Sharptillery -t https://blank.org -c 1 -n 100
+    Will send 100 requests (max) towards blank.org using one virtual user
+Sharptillery -t https://blank.org -c 10 -d 00:00:10 -o report
+    Will send as many requests possible with 10 clients for 10 seconds, will create html report
+
+Flags:
+-t <url>            : Whole path to send to target
+-n <number>         : Max number of requests to send
+-c <number>         : Virtual users. Parallel clients sending requests.
+-d HH:MM:SS         : Duration to run for
+-r <number>         : Requests per second, the program will try to uphold this number of requests.
+-o <name of report> : Outputs a report with name <name of report> in html (default)
+-e <report type>    : Type of report (html/excel)
+-y <yaml config>    : The yaml config file to read instead of command flags");
+                return null;
             }
 
             return flags;
