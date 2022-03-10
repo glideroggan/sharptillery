@@ -117,6 +117,7 @@ internal class Manager : IDisposable
         }
 
         if (_settings.Duration.HasValue && _totalTimeTimer.Elapsed >= _settings.Duration.Value) return null;
+        if (!_settings.Duration.HasValue && _responseData.Count >= _settings.MaxRequests) return null;
 
         if (_flags.HasFlag(FlagEnum.ConstantRps))
         {
