@@ -113,6 +113,8 @@ internal class Manager : IDisposable
             _resetter.Enabled = true;
         }
 
+
+        if (_settings.MaxRequests != null && _rpsCounter > _settings.MaxRequests) return null;
         if (_settings.Duration.HasValue && _totalTimeTimer.Elapsed >= _settings.Duration.Value) return null;
         if (!_settings.Duration.HasValue && _responseData.Count >= _settings.MaxRequests) return null;
 
@@ -222,20 +224,27 @@ internal class Manager : IDisposable
         Console.WriteLine("Percentage of the requests served within a certain time");
         var t = _responseData.Select(x => x.ResponseTime.TotalMilliseconds).ToList();
         t.Sort();
-        // 50% take median
-        var i = GetPercentage(t, .5f);
-        Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "50%", $"{t[i]:F} ms"));
-        // 90%
-        i = GetPercentage(t, .9f);
-        Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "90%", $"{t[i]:F} ms"));
-        // 95%
-        i = GetPercentage(t, .95f);
-        Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "95%", $"{t[i]:F} ms"));
-        // 99% divide all response-time into 100
-        i = GetPercentage(t, .99f);
-        Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "99%", $"{t[i]:F} ms"));
-        // 100% take highest response-time, everything is faster than this
-        Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "100%", $"{t[^1]:F} ms"));
+        if (t.Count == 0)
+        {
+            // there were no completed requests at all
+        }
+        else
+        {
+            // 50% take median
+            var i = GetPercentage(t, .5f);
+            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "50%", $"{t[i]:F} ms"));
+            // 90%
+            i = GetPercentage(t, .9f);
+            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "90%", $"{t[i]:F} ms"));
+            // 95%
+            i = GetPercentage(t, .95f);
+            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "95%", $"{t[i]:F} ms"));
+            // 99% divide all response-time into 100
+            i = GetPercentage(t, .99f);
+            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "99%", $"{t[i]:F} ms"));
+            // 100% take highest response-time, everything is faster than this
+            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "100%", $"{t[^1]:F} ms"));    
+        }
     }
 
     public async Task UntilDoneAsync()
