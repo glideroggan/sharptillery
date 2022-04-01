@@ -113,7 +113,6 @@ internal class Manager : IDisposable
             _resetter.Enabled = true;
         }
 
-
         if (_settings.MaxRequests != null && _rpsCounter > _settings.MaxRequests) return null;
         if (_settings.Duration.HasValue && _totalTimeTimer.Elapsed >= _settings.Duration.Value) return null;
         if (!_settings.Duration.HasValue && _responseData.Count >= _settings.MaxRequests) return null;
@@ -127,7 +126,21 @@ internal class Manager : IDisposable
         }
 
         Interlocked.Add(ref _rpsCounter, 1);
-        return new HttpRequestMessage(HttpMethod.Get, _settings.Target);
+        var method = _settings.Method switch
+        {
+            null => HttpMethod.Get,
+            "PUT" => HttpMethod.Put,
+            _ => HttpMethod.Get
+        };
+        // TODO: move this to something that is already prepared, so the manager can have them prepared for the client
+        var req = new HttpRequestMessage(method, _settings.Target);
+        if (_settings.Headers == null) return req;
+        
+        foreach (var header in _settings.Headers)
+        {
+            req.Headers.Add(header.Key, header.Value);
+        }
+        return req;
     }
 
     public void AddResponse(Data requestsResults)

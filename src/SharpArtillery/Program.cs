@@ -51,8 +51,10 @@ namespace SharpArtillery
             {
                 Vu = flags.Clients,
                 Target = flags.Target,
+                Method = flags.Method,
                 Duration = flags.Duration,
                 MaxRequests = flags.MaxRequests,
+                Headers = flags.Headers,
                 ConstantRps = flags.ConstantRps
             };
             var manager = await RunTest(settings, httpClientFactory);
@@ -169,6 +171,7 @@ namespace SharpArtillery
         public Report Report { get; } = new();
         public int ConstantRps { get; set; }
         public Dictionary<string, string> Headers { get; set; } = new();
+        public string? Method { get; set; }
     }
 
     public class Report

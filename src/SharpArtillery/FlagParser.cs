@@ -13,6 +13,8 @@ namespace SharpArtillery
         {
             // read arguments
             var parser = new FlagParser<ArtilleryConfig>()
+                // TODO: continue here, add flag for choosing Http method
+                .AddFlag('m', (val, c) => c.Method = val)
                 .AddFlag('h', (val, c) =>
                 {
                     var values = val.Split(':');

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Net.Http;
+using System.Net.Security;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -25,13 +26,24 @@ internal class CustomHttpClientFactory : ICustomHttpClientFactory, IDisposable
             case FactoryEnum.Microsoft:
                 break;
             case FactoryEnum.Roger:
+                var sslOptions = new SslClientAuthenticationOptions()
+                {
+                    RemoteCertificateValidationCallback = delegate { return true; }
+                };
                 var socketHandler = new SocketsHttpHandler
                 {
+                    SslOptions = sslOptions,
                     PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
                     PooledConnectionLifetime = Timeout.InfiniteTimeSpan,
                     // TODO: maybe should scale with the number of concurrent clients?
                     MaxConnectionsPerServer = 200,
                 };
+                
+                // var http = new HttpClientHandler()
+                // {
+                //     ClientCertificateOptions = ClientCertificateOption.Manual,
+                //     ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+                // };
                 _con = new HttpClient(socketHandler, true);
                 foreach (var (name, val) in settings.Headers)
                 {
