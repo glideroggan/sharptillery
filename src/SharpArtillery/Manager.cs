@@ -130,6 +130,7 @@ internal class Manager : IDisposable
         {
             null => HttpMethod.Get,
             "PUT" => HttpMethod.Put,
+            "POST" => HttpMethod.Post,
             _ => HttpMethod.Get
         };
         // TODO: move this to something that is already prepared, so the manager can have them prepared for the client

@@ -166,7 +166,7 @@ namespace SharpArtillery
         public TimeSpan? Duration { get; set; }
         public int? RequestRate { get; set; }
 
-        public int MaxRequests { get; set; }
+        public int? MaxRequests { get; set; }
         public int Clients { get; set; }
         public Report Report { get; } = new();
         public int ConstantRps { get; set; }
