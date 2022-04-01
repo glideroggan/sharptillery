@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using SharpArtillery.YamlConfig;
 
@@ -13,7 +15,12 @@ namespace SharpArtillery
         {
             // read arguments
             var parser = new FlagParser<ArtilleryConfig>()
-                // TODO: continue here, add flag for choosing Http method
+                .AddFlag('b', (val, c) =>
+                {
+                    // TODO: handle single quotes and turn into double
+                    val = val.Replace('\'', '"');
+                    c.JsonContent = JsonSerializer.Deserialize<object>(val);
+                })
                 .AddFlag('m', (val, c) => c.Method = val)
                 .AddFlag('h', (val, c) =>
                 {
@@ -60,6 +67,8 @@ Sharptillery -t https://blank.org -c 10 -d 00:00:10 -o report
     Will send as many requests possible with 10 clients for 10 seconds, will create html report
 
 Flags:
+-b <json>           : content in json format
+-m <http method>    : GET,PUT,POST
 -t <url>            : Whole path to send to target
 -n <number>         : Max number of requests to send
 -c <number>         : Virtual users. Parallel clients sending requests.

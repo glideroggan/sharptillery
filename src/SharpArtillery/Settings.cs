@@ -10,4 +10,5 @@ internal class Settings
     public string? Target { get; set; }
     public string? Method { get; init; }
     public Dictionary<string,string>? Headers { get; set; }
+    public object? JsonContent { get; set; }
 }

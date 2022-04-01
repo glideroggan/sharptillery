@@ -49,6 +49,7 @@ namespace SharpArtillery
             // when no yaml is used
             settings = new Settings
             {
+                JsonContent = flags.JsonContent,
                 Vu = flags.Clients,
                 Target = flags.Target,
                 Method = flags.Method,
@@ -172,6 +173,7 @@ namespace SharpArtillery
         public int ConstantRps { get; set; }
         public Dictionary<string, string> Headers { get; set; } = new();
         public string? Method { get; set; }
+        public object? JsonContent { get; set; }
     }
 
     public class Report

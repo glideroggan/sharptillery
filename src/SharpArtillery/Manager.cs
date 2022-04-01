@@ -6,6 +6,8 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Timer = System.Timers.Timer;
@@ -135,12 +137,20 @@ internal class Manager : IDisposable
         };
         // TODO: move this to something that is already prepared, so the manager can have them prepared for the client
         var req = new HttpRequestMessage(method, _settings.Target);
-        if (_settings.Headers == null) return req;
-        
-        foreach (var header in _settings.Headers)
+        if (_settings.Headers != null)
         {
-            req.Headers.Add(header.Key, header.Value);
+            foreach (var header in _settings.Headers)
+            {
+                req.Headers.Add(header.Key, header.Value);
+            }
         }
+
+        if (_settings.JsonContent != null)
+        {
+            req.Content = JsonContent.Create(_settings.JsonContent);
+            req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        }
+
         return req;
     }
 
