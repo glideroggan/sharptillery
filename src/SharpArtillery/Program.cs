@@ -132,7 +132,6 @@ namespace SharpArtillery
             }
         }
 
-        // ReSharper disable once UnusedMember.Local
         static void StandardOutReport(Stopwatch timer, IReadOnlyCollection<Data> completedTasks)
         {
             Console.WriteLine($"Test took {timer.Elapsed.TotalSeconds} seconds");

@@ -245,12 +245,13 @@ internal class Manager : IDisposable
             string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Mean latency:", $"{mean:F} ms"));
         Console.WriteLine();
 
-        Console.WriteLine("Percentage of the requests served within a certain time");
+        Console.WriteLine("Percentage of the OK requests served within a certain time");
         var t = _responseData.Select(x => x.ResponseTime.TotalMilliseconds).ToList();
         t.Sort();
         if (t.Count == 0)
         {
             // there were no completed requests at all
+            Console.WriteLine("No requests went fine!");
         }
         else
         {
@@ -268,6 +269,32 @@ internal class Manager : IDisposable
             Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "99%", $"{t[i]:F} ms"));
             // 100% take highest response-time, everything is faster than this
             Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "100%", $"{t[^1]:F} ms"));    
+        }
+        
+        Console.WriteLine("Percentage of the ERROR requests served within a certain time");
+        var errorList = _errors.Select(x => x.ResponseTime.TotalMilliseconds).ToList();
+        errorList.Sort();
+        if (errorList.Count == 0)
+        {
+            // there were no completed requests at all
+            Console.WriteLine("No Errors");
+        }
+        else
+        {
+            // 50% take median
+            var i = GetPercentage(errorList, .5f);
+            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "50%", $"{errorList[i]:F} ms"));
+            // 90%
+            i = GetPercentage(errorList, .9f);
+            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "90%", $"{errorList[i]:F} ms"));
+            // 95%
+            i = GetPercentage(errorList, .95f);
+            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "95%", $"{errorList[i]:F} ms"));
+            // 99% divide all response-time into 100
+            i = GetPercentage(errorList, .99f);
+            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "99%", $"{errorList[i]:F} ms"));
+            // 100% take highest response-time, everything is faster than this
+            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "100%", $"{errorList[^1]:F} ms"));    
         }
     }
 
