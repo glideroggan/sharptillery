@@ -35,6 +35,9 @@ internal class Client
         {
             // PERF: to not be hindered by race conditions, we should send a list of requests to each client instead?
             // might not work later with rampup?
+            // yes, this seems like a better idea, then all clients can just take requests from a queue, we can have
+            // a separate manager thread that keeps the queue filled with requests, this way we have smaller
+            // threads just feeding requests to the target, while the manager keeps track of how many requests have been fired
             var req = await _manager.GetRequestMessageAsync();
             if (req == null)
             {

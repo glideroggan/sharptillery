@@ -10,6 +10,9 @@ using SharpArtillery.YamlConfig;
 namespace SharpArtillery
 {
     /*
+        BUGS:
+            - RPS gets bugged when having errors in the responses, or too many calls
+                Do the suggested changes on how the requests agents get their requests
      * FEATURE:
      *  
      * - Redirect console output? can it already be done? Or we should write to StdOut instead?
