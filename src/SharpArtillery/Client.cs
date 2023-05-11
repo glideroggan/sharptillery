@@ -28,52 +28,66 @@ internal class Client
         _httpClientFactory = httpClientFactory;
     }
 
-    public async Task RunAsync()
+    public async void Run()
     {
-        while (!_managerClientKillToken.IsCancellationRequested &&
-               !_privateKillTokenSource.Token.IsCancellationRequested)
+        try
         {
-            // PERF: to not be hindered by race conditions, we should send a list of requests to each client instead?
-            // might not work later with rampup?
-            // yes, this seems like a better idea, then all clients can just take requests from a queue, we can have
-            // a separate manager thread that keeps the queue filled with requests, this way we have smaller
-            // threads just feeding requests to the target, while the manager keeps track of how many requests have been fired
-            var req = await _manager.GetRequestMessageAsync();
-            if (req == null)
+            _manager.StartClients.WaitOne();
+            // TODO: should set in a more global kill switch here, so that if cancellation is requested, but
+            // we failed on dequeue, then we will want to try to dequeue again
+            while (!_managerClientKillToken.IsCancellationRequested)
             {
-                _manager.ClientDone(_id);
-                _privateKillTokenSource.Cancel();
-                continue;
-            }
+                if (_manager.RequestMessageQueue.IsEmpty) break;
+                if (!_manager.RequestMessageQueue.TryDequeue(out var req))
+                    continue;
 
-            // TODO: probably should add another token for this call
-            // Sometimes we get stuck on the SendAsync, we should abort the send
-            var requestResults = new Data
-            {
-                StartTime = DateTime.UtcNow
-            };
-            try
-            {
-                var c = new CancellationTokenSource();
-                var httpClient = _httpClientFactory.CreateClient();
-                c.CancelAfter(TimeSpan.FromSeconds(5));
+                var requestResults = new Data
+                {
+                    StartTime = DateTime.UtcNow
+                };
+                try
+                {
+                    var c = new CancellationTokenSource();
+                    // TODO: what happens if we have more clients than concurrent connections/sockets in the
+                    // http factory? maybe we should adjust for that
+                    var httpClient = _httpClientFactory.CreateClient();
+                    // TODO: make the timeout configurable
+                    c.CancelAfter(TimeSpan.FromSeconds(5));
 
-                var res = await httpClient.SendAsync(req, c.Token);
+                    var res = await httpClient.SendAsync(req, c.Token);
 
-                // TODO: we should read out the message as soon as possible, to let go of that stream
-                requestResults.Status = res.StatusCode;
+                    // TODO: we should read out the message as soon as possible, to let go of that stream
+                    requestResults.Status = res.StatusCode;
+                }
+                catch (AggregateException e)
+                {
+                    requestResults.Status = HttpStatusCode.InternalServerError;
+                    Console.WriteLine(e.Message);
+                }
+                catch (Exception e)
+                {
+                    requestResults.Status = HttpStatusCode.InternalServerError;
+                    Console.WriteLine(e.Message);
+                }
+
+                requestResults.RequestReceivedTime = DateTime.UtcNow;
+                requestResults.EndTime = DateTime.UtcNow;
+                requestResults.ResponseTime = requestResults.EndTime - requestResults.StartTime;
+                requestResults.RequestTimeLine = _manager.TotalTimeTimer.Elapsed;
+                
+                _manager.ResponseMessageQueue.Enqueue(requestResults); 
             }
-            catch (AggregateException)
-            {
-                requestResults.Status = HttpStatusCode.InternalServerError;
-            }
-            catch (Exception)
-            {
-                requestResults.Status = HttpStatusCode.InternalServerError;
-            }
-            requestResults.EndTime = DateTime.UtcNow;
-            requestResults.ResponseTime = requestResults.EndTime - requestResults.StartTime;
-            _manager.AddResponse(requestResults);
+            // sleep before killing thread to just let everything cool
+            await Task.Delay(1000);
+            Debug.Assert(_manager.RequestMessageQueue.IsEmpty);
+        }
+        catch (AggregateException ae)
+        {
+            Console.WriteLine(ae);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
         }
     }
 }

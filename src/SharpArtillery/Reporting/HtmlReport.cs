@@ -27,6 +27,9 @@ internal static class HtmlReport
         reportData.Sort((a, b) =>
             a.RequestSentTime < b.RequestSentTime ? -1 :
             a.RequestSentTime == b.RequestSentTime ? 0 : 1);
+        // reportData.Sort((a, b) =>
+        //     a.RequestReceivedTime < b.RequestReceivedTime ? -1 :
+        //     a.RequestReceivedTime == b.RequestReceivedTime ? 0 : 1);
 
         // get content from manifest
         await using var stream =

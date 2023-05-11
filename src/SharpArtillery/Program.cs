@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
+using System.Threading;
 using System.Threading.Tasks;
 using SharpArtillery.Reporting;
 using SharpArtillery.YamlConfig;
@@ -13,8 +14,11 @@ namespace SharpArtillery
         BUGS:
             - RPS gets bugged when having errors in the responses, or too many calls
                 Do the suggested changes on how the requests agents get their requests
+       TODO:
+        - if test finishes before a second, then we need to aggregate all numbers as one, otherwise they will still be zero
      * FEATURE:
-     *  
+     *  - adjust the number of http connection to server in http factory, to the number of vu's
+     *  - add version check
      * - Redirect console output? can it already be done? Or we should write to StdOut instead?
      * - a graph for each phase?
      */
@@ -74,37 +78,31 @@ namespace SharpArtillery
         {
             // set up manager that will keep track of global state
             // var endpoint = flags.YamlConfig.Settings.Target + flags.YamlConfig.Scenarios[0].Flow[0].Get.Url;
-            var manager = new Manager(settings);
-            try
+            var manager = new Manager(settings, httpClientFactory);
+            await manager.PrepareForTest();
+            var runningTest = new Thread(manager.RunTest) { IsBackground = true };
+            runningTest.Start();
+            // var runningTest = manager.RunTest();
+            
+            // report progress from manager
+            while (runningTest.IsAlive)
             {
-                // set up the clients
-                var clients = new List<Client>();
-                for (var i = 0; i < settings.Vu; i++)
-                {
-                    var c = new Client(i, manager, httpClientFactory);
-                    clients.Add(c);
-                }
-
-                // start test
-                foreach (var client in clients)
-                {
-                    _ = client.RunAsync();
-                }
-
-                // report progress from manager
-                while (!manager.ClientKillToken.IsCancellationRequested)
-                {
-                    var progress = manager.GetProgress;
-                    Console.WriteLine(
-                        $"Requests: {progress.Requests} ({progress.PercentDone}%), requests per second: {progress.Rps}, " +
-                        $"Error ratio: {progress.ErrorRatio * 100:F}%, mean latency: {progress.MeanLatency:F} ms");
-                    await Task.Delay(3000);
-                }
+                var progress = manager.GetProgress;
+                Console.WriteLine(
+                    $"Requests: {progress.Requests} ({progress.PercentDone}%), requests per second: {progress.Rps}, " +
+                    $"Error ratio: {progress.ErrorRatio * 100:F}%, mean latency: {progress.MeanLatency:F} ms");
+                await Task.Delay(1000);
             }
-            finally
-            {
-                await manager.UntilDoneAsync();
-            }
+            
+            await manager.ProcessData();
+
+            Debug.Assert(manager.Results.Count == manager.GetProgress.Requests);
+            
+            
+            
+            
+            StandardOutReport(manager.TotalTimeTimer, manager.Results);
+            manager.Report();
 
             return manager;
         }
@@ -137,10 +135,11 @@ namespace SharpArtillery
 
         static void StandardOutReport(Stopwatch timer, IReadOnlyCollection<Data> completedTasks)
         {
+            
             Console.WriteLine($"Test took {timer.Elapsed.TotalSeconds} seconds");
             // aggregate results
-            var averageLatency = completedTasks.Average(r => r.Latency.TotalMilliseconds);
-            var maxLatency = completedTasks.MaxBy(r => r.Latency).Latency.TotalMilliseconds;
+            var averageLatency = completedTasks.Average(r => r.ResponseTime.TotalMilliseconds);
+            var maxLatency = completedTasks.MaxBy(r => r.ResponseTime).ResponseTime.TotalMilliseconds;
 
             // breakdown of latency
             Console.WriteLine($"Average latency: {averageLatency:0.00} ms");
