@@ -43,11 +43,11 @@
             
             // get the data and group them after phase, and compute average latency
             let groupedByPhase = groupBy(dataRows, 'phase');
-            // console.log(groupedByPhase);
+            // Console.Out.log(groupedByPhase);
             const average = (groupedByPhase, phase) => 
                 groupedByPhase[phase].reduce((previous, current) => previous + current['latency'], 0) 
                 / groupedByPhase[phase].length;
-            // console.log("average: ", average(groupedByPhase, 'warm up'));
+            // Console.Out.log("average: ", average(groupedByPhase, 'warm up'));
             let rows = [];
             for (const prop in groupedByPhase) {
                 let item = [];

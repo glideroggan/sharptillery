@@ -1,191 +1,47 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
 using System.Net;
-using System.Threading;
-using System.Threading.Tasks;
-using SharpArtillery.Reporting;
-using SharpArtillery.YamlConfig;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using SharpArtillery;
 
-namespace SharpArtillery
-{
-    /*
-        BUGS:
-            - RPS gets bugged when having errors in the responses, or too many calls
-                Do the suggested changes on how the requests agents get their requests
-       TODO:
-        - if test finishes before a second, then we need to aggregate all numbers as one, otherwise they will still be zero
-     * FEATURE:
-     *  - adjust the number of http connection to server in http factory, to the number of vu's
-     *  - add version check
-     * - Redirect console output? can it already be done? Or we should write to StdOut instead?
-     * - a graph for each phase?
-     */
-    public static class Program
+/*
+BUGS:
+        
+TODO:
+    - fix the duration flag, as right now its not working
+    - add flags for payload and type of request GET POST
+ * FEATURE:
+ *  - adjust the number of http connection to server in http factory, to the number of vu's
+ *  - add version check
+ * - Redirect console output? can it already be done? Or we should write to StdOut instead?
+ * - a graph for each phase?
+ * - fix colored text for console?
+ */
+
+
+var host = Host.CreateDefaultBuilder(args)
+    .ConfigureServices(services =>
     {
-        public static async Task Main(string[] args)
-        {
-            var flags = ProgramSettings.HandleConfigsAndSettings(args);
-            if (flags == null) return;
+        services.AddSingleton<MainService>();
+        services.AddLogging();
 
-            var httpClientFactory = new CustomHttpClientFactory(null, FactoryEnum.Roger, flags);
-
-
-            // do we have phases?
-            Settings? settings;
-            if (flags.YamlConfig != null)
-            {
-                var config = flags.YamlConfig;
-                foreach (var phase in config.Settings.Phases)
-                {
-                    // TODO: yaml config don't support duration yet
-                    var endpoint = flags.YamlConfig.Settings.Target + flags.YamlConfig.Scenarios[0].Flow[0].Get.Url;
-                    settings = new Settings
-                    {
-                        Vu = phase.Vu,
-                        Target = endpoint,
-                        MaxRequests = phase.Requests
-                    };
-                    await RunTest(settings, httpClientFactory);
-                }
-
-                return;
-            }
-
-            // when no yaml is used
-            settings = new Settings
-            {
-                JsonContent = flags.JsonContent,
-                Vu = flags.Clients,
-                Target = flags.Target,
-                Method = flags.Method,
-                Duration = flags.Duration,
-                MaxRequests = flags.MaxRequests,
-                Headers = flags.Headers,
-                ConstantRps = flags.ConstantRps
-            };
-            var manager = await RunTest(settings, httpClientFactory);
-
-            if (flags.Report.Enabled)
-                await WriteReportAsync(flags.Report, manager.Results,
-                    flags.YamlConfig != null
-                        ? flags.YamlConfig.Settings.Target + flags.YamlConfig.Scenarios[0].Flow[0].Get.Url
-                        : flags.Target);
-        }
-
-        private static async Task<Manager> RunTest(Settings settings, ICustomHttpClientFactory httpClientFactory)
-        {
-            // set up manager that will keep track of global state
-            // var endpoint = flags.YamlConfig.Settings.Target + flags.YamlConfig.Scenarios[0].Flow[0].Get.Url;
-            var manager = new Manager(settings, httpClientFactory);
-            await manager.PrepareForTest();
-            var runningTest = new Thread(manager.RunTest) { IsBackground = true };
-            runningTest.Start();
-            // var runningTest = manager.RunTest();
-            
-            // report progress from manager
-            while (runningTest.IsAlive)
-            {
-                var progress = manager.GetProgress;
-                Console.WriteLine(
-                    $"Requests: {progress.Requests} ({progress.PercentDone}%), requests per second: {progress.Rps}, " +
-                    $"Error ratio: {progress.ErrorRatio * 100:F}%, mean latency: {progress.MeanLatency:F} ms");
-                await Task.Delay(1000);
-            }
-            
-            await manager.ProcessData();
-
-            Debug.Assert(manager.Results.Count == manager.GetProgress.Requests);
-            
-            
-            
-            
-            StandardOutReport(manager.TotalTimeTimer, manager.Results);
-            manager.Report();
-
-            return manager;
-        }
-
-
-        // ReSharper disable once UnusedMember.Local
-        private static async Task WriteReportAsync(Report report, List<Data> responseData, string endpoint)
-        {
-            // FEATURE: add progress for writing in console, like function for progress
-            // FEATURE: streaming writing? Under longer tests we should stream the results into a csv that we can
-            // later turn into an excel
-            // FEATURE: we should add more info to the report about
-            // - what was the average latency on that endpoint
-            switch (report.Extension)
-            {
-                case ".xlsx":
-                    // TODO: enable excel reporting again
-                    throw new NotImplementedException();
-                    // MyExcel.Create(outputPath, requests);
-                    break;
-                case ".html":
-#pragma warning disable IL2026
-                    await HtmlReport.CreateAsync(report.Name + report.Extension, responseData, endpoint);
-#pragma warning restore IL2026
-                    break;
-                default:
-                    throw new NotImplementedException();
-            }
-        }
-
-        static void StandardOutReport(Stopwatch timer, IReadOnlyCollection<Data> completedTasks)
-        {
-            
-            Console.WriteLine($"Test took {timer.Elapsed.TotalSeconds} seconds");
-            // aggregate results
-            var averageLatency = completedTasks.Average(r => r.ResponseTime.TotalMilliseconds);
-            var maxLatency = completedTasks.MaxBy(r => r.ResponseTime).ResponseTime.TotalMilliseconds;
-
-            // breakdown of latency
-            Console.WriteLine($"Average latency: {averageLatency:0.00} ms");
-            Console.WriteLine($"Max     latency: {maxLatency} ms");
-
-            // sum up all different statuscodes
-            var countedStatuses = from d in completedTasks
-                group d by d.Status
-                into status
-                select new { StatusCode = status, Count = status.Count() };
-            foreach (var status in countedStatuses)
-            {
-                Console.WriteLine($"{status.StatusCode.Key} : {status.Count}");
-            }
-
-            Console.WriteLine($"Errors: {completedTasks.Count(x => !string.IsNullOrEmpty(x.Error))}");
-        }
-    }
-
-
-    public class ArtilleryConfig
+    })
+    .ConfigureLogging(a =>
     {
-        public string? Yaml { get; set; }
-        public string? Target { get; set; }
-        public ConfigRoot? YamlConfig { get; set; }
-        public TimeSpan? Duration { get; set; }
-        public int? RequestRate { get; set; }
+        a.ClearProviders();
+        a.AddConsole(c => c.LogToStandardErrorThreshold = LogLevel.Debug);
+    })
+    .Build();
 
-        public int? MaxRequests { get; set; }
-        public int Clients { get; set; }
-        public Report Report { get; } = new();
-        public int ConstantRps { get; set; }
-        public Dictionary<string, string> Headers { get; set; } = new();
-        public string? Method { get; set; }
-        public object? JsonContent { get; set; }
-    }
 
-    public class Report
-    {
-        public bool Enabled { get; set; }
-        public string Name { get; set; } = "report";
-        public string Extension { get; set; } = ".html";
-    }
-}
+var program = host.Services.GetRequiredService<MainService>();
+await program.Main(args);
 
-internal struct Data
+// await host.RunAsync();
+
+
+public struct DataPoint
 {
     internal DateTime RequestSentTime;
 

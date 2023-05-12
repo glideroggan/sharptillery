@@ -21,7 +21,7 @@ internal static class HtmlReport
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
     [RequiresUnreferencedCode("Calls System.Text.Json.JsonSerializer.Serialize<SharpArtillery.YamlConfig.Config>(SharpArtillery.YamlConfig.Config, System.Text.Json.JsonSerializerOptions?)")]
-    public static async Task CreateAsync(string outputPath, List<Data> reportData, string url)
+    public static async Task CreateAsync(string outputPath, List<DataPoint> reportData, string url)
     {
         // fix the main graph
         reportData.Sort((a, b) =>
@@ -64,7 +64,7 @@ internal static class HtmlReport
 
     [RequiresUnreferencedCode(
         "Calls System.Text.Json.JsonSerializer.Serialize<System.Collections.Generic.IEnumerable<<anonymous type: int Time, System.TimeSpan Latency, int RequestRate, string Phase>>>(System.Collections.Generic.IEnumerable<<anonymous type: int Time, System.TimeSpan Latency, int RequestRate, string Phase>>, System.Text.Json.JsonSerializerOptions?)")]
-    private static string PrepareRequestData(List<Data> requestData)
+    private static string PrepareRequestData(List<DataPoint> requestData)
     {
         var counter = 0;
         // TODO: average/aggregate up data within the time intervals, for seconds, take all the requests within a second

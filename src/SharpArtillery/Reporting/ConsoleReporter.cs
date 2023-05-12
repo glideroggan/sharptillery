@@ -5,13 +5,14 @@ using System.Threading.Tasks;
 
 namespace SharpArtillery.Reporting;
 
+[Obsolete]
 internal static class ConsoleReporter
 {
     private static (int Left, int Top) cursor;
     private static (int Left, int Top) emittingCursor;
     private static List<string> emitBuffer = new();
 
-    internal static void Report(Stopwatch durationTimer, List<Data> completedTasks, List<Task<Data>> tasks,
+    internal static void Report(Stopwatch durationTimer, List<DataPoint> completedTasks, List<Task<DataPoint>> tasks,
         int requestRate)
     {
         // Console.SetCursorPosition(cursor.Left, cursor.Top);

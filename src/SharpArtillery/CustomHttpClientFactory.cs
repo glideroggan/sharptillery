@@ -2,7 +2,7 @@
 using System.Net.Http;
 using System.Net.Security;
 using System.Threading;
-using System.Threading.Tasks;
+using SharpArtillery.Configs;
 
 namespace SharpArtillery;
 
@@ -12,11 +12,11 @@ internal enum FactoryEnum
 }
 internal class CustomHttpClientFactory : ICustomHttpClientFactory, IDisposable
 {
-    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IHttpClientFactory? _httpClientFactory;
     private readonly FactoryEnum _factory;
-    private HttpClient _con;
+    private HttpClient? _con;
 
-    public CustomHttpClientFactory(IHttpClientFactory httpClientFactory, FactoryEnum factory,
+    public CustomHttpClientFactory(IHttpClientFactory? httpClientFactory, FactoryEnum factory,
         ArtilleryConfig settings)
     {
         _httpClientFactory = httpClientFactory;
@@ -28,6 +28,7 @@ internal class CustomHttpClientFactory : ICustomHttpClientFactory, IDisposable
             case FactoryEnum.Roger:
                 var sslOptions = new SslClientAuthenticationOptions()
                 {
+                    // TODO: should be configured by flags
                     RemoteCertificateValidationCallback = delegate { return true; }
                 };
                 var socketHandler = new SocketsHttpHandler
@@ -39,11 +40,6 @@ internal class CustomHttpClientFactory : ICustomHttpClientFactory, IDisposable
                     MaxConnectionsPerServer = 200,
                 };
                 
-                // var http = new HttpClientHandler()
-                // {
-                //     ClientCertificateOptions = ClientCertificateOption.Manual,
-                //     ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-                // };
                 _con = new HttpClient(socketHandler, true);
                 foreach (var (name, val) in settings.Headers)
                 {
@@ -51,7 +47,7 @@ internal class CustomHttpClientFactory : ICustomHttpClientFactory, IDisposable
                 }
                 break;
             default:
-                throw new ArgumentOutOfRangeException();
+                throw new ArgumentOutOfRangeException(nameof(_factory));
         }
         
     }
@@ -61,11 +57,11 @@ internal class CustomHttpClientFactory : ICustomHttpClientFactory, IDisposable
         switch (_factory)
         {
             case FactoryEnum.Microsoft:
-                _con = _httpClientFactory.CreateClient("TestTarget");
+                _con = _httpClientFactory!.CreateClient("TestTarget");
                 _con.DefaultRequestHeaders.ConnectionClose = false;
                 return _con;
             case FactoryEnum.Roger:
-                return _con;
+                return _con!;
             default:
                 throw new ArgumentOutOfRangeException();
         }

@@ -1,9 +1,11 @@
-﻿using System;
+﻿#pragma warning disable CA1848
+using System;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace SharpArtillery;
 
@@ -16,14 +18,13 @@ internal class Client
 {
     private readonly Manager _manager;
     private readonly CancellationToken _managerClientKillToken;
-    private readonly CancellationTokenSource _privateKillTokenSource = new();
-    private readonly int _id;
     private readonly ICustomHttpClientFactory _httpClientFactory;
+    private readonly ILogger<Client> _logger;
 
-    public Client(int id, Manager manager, ICustomHttpClientFactory httpClientFactory)
+    public Client(Manager manager, ICustomHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory)
     {
         _manager = manager;
-        _id = id;
+        _logger = loggerFactory.CreateLogger<Client>();
         _managerClientKillToken = manager.ClientKillToken;
         _httpClientFactory = httpClientFactory;
     }
@@ -41,7 +42,7 @@ internal class Client
                 if (!_manager.RequestMessageQueue.TryDequeue(out var req))
                     continue;
 
-                var requestResults = new Data
+                var requestResults = new DataPoint
                 {
                     StartTime = DateTime.UtcNow
                 };
@@ -62,12 +63,12 @@ internal class Client
                 catch (AggregateException e)
                 {
                     requestResults.Status = HttpStatusCode.InternalServerError;
-                    Console.WriteLine(e.Message);
+                    requestResults.Error = e.Message;
                 }
                 catch (Exception e)
                 {
                     requestResults.Status = HttpStatusCode.InternalServerError;
-                    Console.WriteLine(e.Message);
+                    requestResults.Error = e.Message;
                 }
 
                 requestResults.RequestReceivedTime = DateTime.UtcNow;
@@ -83,11 +84,11 @@ internal class Client
         }
         catch (AggregateException ae)
         {
-            Console.WriteLine(ae);
+            _logger.LogError("Client error: {Message}", ae.Message);
         }
         catch (Exception e)
         {
-            Console.WriteLine(e);
+            _logger.LogError("Client error: {Message}", e.Message);
         }
     }
 }

@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 
+namespace SharpArtillery.Configs;
+
 internal class Settings
 {
     public int? ConstantRps { get; set; }

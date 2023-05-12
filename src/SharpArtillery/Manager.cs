@@ -1,23 +1,22 @@
-﻿using System;
-using System.Collections;
+﻿#pragma warning disable CA1848
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
-using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Timer = System.Timers.Timer;
+using Microsoft.Extensions.Logging;
+using SharpArtillery.Configs;
 
 namespace SharpArtillery;
 
 /*
  * BUG:
- *  - RPS is counted towards error
  *  - timeouts are not counted as errors?
  *  - Why do we get more latency running with more clients and having low constant rps?
  *      Looking at the server it still only have low connection rate, meaning that most clients aren't even sending.
@@ -42,186 +41,45 @@ internal enum FlagEnum
 
 internal class Manager : IDisposable
 {
-    private readonly CancellationTokenSource _internalCancellationTokenSource;
-    private readonly ConcurrentQueue<Data> _requestResultsQueue = new();
     private bool _done;
-    private volatile List<Data> _responseData = new();
+    private volatile List<DataPoint> _responseData = new();
 
-    private int _clientsDone;
-
-    // private readonly List<Data> _errors = new();
     public readonly Stopwatch TotalTimeTimer = new();
-    private readonly Stopwatch _secondTimer = new();
-    private int _rpsCounter;
-    private float _progressLastTotalLatency;
     private readonly FlagEnum _flags;
     private readonly Settings _settings;
     private int _averageRps;
     private readonly SemaphoreSlim _blocker;
-    private int _requestsInStock;
-    private Timer _resetter;
-    private float _talliedRequests;
     private readonly ICustomHttpClientFactory _httpClientFactory;
 
     private readonly List<Client> _clients = new();
     public readonly ConcurrentQueue<HttpRequestMessage> RequestMessageQueue = new();
-    public readonly ConcurrentQueue<Data> ResponseMessageQueue = new();
+    public readonly ConcurrentQueue<DataPoint> ResponseMessageQueue = new();
 
-    public Manager(Settings settings, ICustomHttpClientFactory customHttpClientFactory)
+    public Manager(Settings settings, ICustomHttpClientFactory customHttpClientFactory, ILoggerFactory loggerFactory)
     {
         _settings = settings;
+        _loggerFactory = loggerFactory;
+        _logger = loggerFactory.CreateLogger<Manager>();
         _httpClientFactory = customHttpClientFactory;
+        // BUG: this feature is not implemented yet, after the change of flow
         if (settings.ConstantRps > 0)
         {
             _blocker = new SemaphoreSlim(settings.ConstantRps.Value, settings.ConstantRps.Value);
             _flags |= FlagEnum.ConstantRps;
-            _requestsInStock = settings.ConstantRps.Value;
         }
 
         if (settings.Duration != null && settings.MaxRequests > 0)
             throw new ArgumentException("You can't have flag duration and requests at the same time");
-        _internalCancellationTokenSource = new CancellationTokenSource();
         Clientcts = new CancellationTokenSource();
+        // configure the request queue settings
+        _topupSettings = new TopupSettings(2000, 4000 * _settings.Vu, 4000);
     }
+
+    record TopupSettings(int WarningLimit, int TopupAmount, int TopupLimit);
 
     private CancellationTokenSource Clientcts { get; }
     public CancellationToken ClientKillToken => Clientcts.Token;
 
-
-    // public async Task<HttpRequestMessage?> GetRequestMessageAsync()
-    // {
-    //     if (!_totalTimeTimer.IsRunning)
-    //     {
-    //         _ = HandleResponseQueueAsync();
-    //         _totalTimeTimer.Start();
-    //         _secondTimer.Start();
-    //         _resetter = new Timer
-    //         {
-    //             AutoReset = true,
-    //             Interval = 100,
-    //         };
-    //         var requestsPerInterval = _settings.ConstantRps.HasValue ? _settings.ConstantRps.Value / 1000f * 100f : 0;
-    //
-    //         _resetter.Elapsed += (_, _) =>
-    //         {
-    //             if (_secondTimer.Elapsed.TotalMilliseconds > 1000)
-    //             {
-    //                 _secondTimer.Restart();
-    //                 _rps = _rpsCounter;
-    //                 _rpsCounter = 0;
-    //             }
-    //
-    //             if (_flags.HasFlag(FlagEnum.ConstantRps))
-    //             {
-    //                 _talliedRequests += requestsPerInterval;
-    //                 if (_talliedRequests >= 1)
-    //                 {
-    //                     _requestsInStock += (int)MathF.Floor(_talliedRequests);
-    //                     _talliedRequests -= MathF.Floor(_talliedRequests);
-    //                 }
-    //             }
-    //         };
-    //         _resetter.Enabled = true;
-    //     }
-    //
-    //     if (_settings.MaxRequests != null && _rpsCounter > _settings.MaxRequests) return null;
-    //     if (_settings.Duration.HasValue && _totalTimeTimer.Elapsed >= _settings.Duration.Value) return null;
-    //     if (!_settings.Duration.HasValue && _responseData.Count >= _settings.MaxRequests) return null;
-    //
-    //     if (_flags.HasFlag(FlagEnum.ConstantRps))
-    //     {
-    //         await _blocker.WaitAsync(ClientKillToken);
-    //         while (_requestsInStock <= 0) await Task.Delay(1);
-    //         Interlocked.Decrement(ref _requestsInStock);
-    //         _blocker.Release();
-    //     }
-    //
-    //     Interlocked.Add(ref _rpsCounter, 1);
-    //     var method = _settings.Method switch
-    //     {
-    //         null => HttpMethod.Get,
-    //         "PUT" => HttpMethod.Put,
-    //         "POST" => HttpMethod.Post,
-    //         _ => HttpMethod.Get
-    //     };
-    //     // TODO: move this to something that is already prepared, so the manager can have them prepared for the client
-    //     var req = new HttpRequestMessage(method, _settings.Target);
-    //     if (_settings.Headers != null)
-    //     {
-    //         foreach (var header in _settings.Headers)
-    //         {
-    //             req.Headers.Add(header.Key, header.Value);
-    //         }
-    //     }
-    //
-    //     if (_settings.JsonContent != null)
-    //     {
-    //         req.Content = JsonContent.Create(_settings.JsonContent);
-    //         req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-    //     }
-    //
-    //     return req;
-    // }
-
-    // public void AddResponse(Data requestsResults)
-    // {
-    //     requestsResults.RequestTimeLine = _totalTimeTimer.Elapsed;
-    //     requestsResults.Rps = _rps;
-    //
-    //     _requestResultsQueue.Enqueue(requestsResults);
-    // }
-
-    // private async Task HandleResponseQueueAsync()
-    // {
-    //     while (!_internalCancellationTokenSource.Token.IsCancellationRequested)
-    //     {
-    //         if (_clientsDone == _settings.Vu && _requestResultsQueue.IsEmpty)
-    //         {
-    //             // we should be done, complete the report
-    //             _totalTimeTimer.Stop();
-    //             _resetter.Enabled = false;
-    //
-    //             Clientcts.Cancel();
-    //             Report();
-    //             _internalCancellationTokenSource.Cancel();
-    //             continue;
-    //         }
-    //
-    //         // dequeue responses and process them
-    //         if (_requestResultsQueue.TryDequeue(out var results))
-    //         {
-    //             // TODO: don't forget to handle non-OK responses
-    //             if (results.Status == HttpStatusCode.OK)
-    //             {
-    //                 _responseData.Add(results);
-    //             }
-    //             else
-    //             {
-    //                 _errors.Add(results);
-    //             }
-    //
-    //             // update progress
-    //             GetProgress.Requests++;
-    //             GetProgress.ErrorRatio = (float)_errors.Count / GetProgress.Requests;
-    //             GetProgress.Rps = results.Rps;
-    //             GetProgress.MeanLatency =
-    //                 (float)(_progressLastTotalLatency + results.ResponseTime.TotalMilliseconds) /
-    //                 GetProgress.Requests;
-    //             // TODO: needs to change to handle <duration>
-    //             GetProgress.PercentDone = _settings.MaxRequests > 0
-    //                 ? (int)(_responseData.Count / (float)_settings.MaxRequests * 100)
-    //                 : (int)(_totalTimeTimer.ElapsedMilliseconds / _settings.Duration!.Value.TotalMilliseconds * 100);
-    //             _progressLastTotalLatency =
-    //                 (float)(_progressLastTotalLatency + results.ResponseTime.TotalMilliseconds);
-    //         }
-    //         else
-    //         {
-    //             await Task.Delay(1);
-    //         }
-    //     }
-    //
-    //     _done = true;
-    // }
 
     public void Report()
     {
@@ -235,99 +93,91 @@ internal class Manager : IDisposable
         var okRequests = _responseData.Where(x => !IsError(x)).ToList();
         var errorRequests = _responseData.Where(IsError).ToList();
 
-        Console.WriteLine(
+        
+        Console.Out.WriteLine(
             string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Target URL:", _settings.Target));
-        Console.WriteLine(_settings.MaxRequests > 0
+        Console.Out.WriteLine(_settings.MaxRequests > 0
             ? string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Max requests:", _settings.MaxRequests)
             : string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Duration:",
                 _settings.Duration!.Value.ToString()));
-        Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Concurrency level:",
+        Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Concurrency level:",
             _settings.Vu));
-        Console.WriteLine();
+        Console.Out.WriteLine();
 
-        Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Completed requests:",
+        Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Completed requests:",
             okRequests.Count + errorRequests.Count));
-        Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Total errors:",
+        Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Total errors:",
             errorRequests.Count));
-        Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Total time:",
+        Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Total time:",
             $"{TotalTimeTimer.Elapsed.TotalSeconds} s"));
-        Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Requests per second:",
+        Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Requests per second:",
             _averageRps));
         var mean = _responseData.Count > 0 ? okRequests.Average(r => r.ResponseTime.TotalMilliseconds) : 0;
-        Console.WriteLine(
+        Console.Out.WriteLine(
             string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Mean latency:", $"{mean:F} ms"));
-        Console.WriteLine();
+        Console.Out.WriteLine();
 
-        Console.WriteLine("Percentage of the OK requests served within a certain time");
+        Console.Out.WriteLine("Percentage of the OK requests served within a certain time");
         var t = okRequests.Select(x => x.ResponseTime.TotalMilliseconds).ToList();
         t.Sort();
         if (t.Count == 0)
         {
             // there were no completed requests at all
-            Console.WriteLine("No requests went fine!");
+            Console.Out.WriteLine("No requests went fine!");
         }
         else
         {
             // 50% take median
             var i = GetPercentage(t, .5f);
-            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "50%", $"{t[i]:F} ms"));
+            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "50%", $"{t[i]:F} ms"));
             // 90%
             i = GetPercentage(t, .9f);
-            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "90%", $"{t[i]:F} ms"));
+            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "90%", $"{t[i]:F} ms"));
             // 95%
             i = GetPercentage(t, .95f);
-            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "95%", $"{t[i]:F} ms"));
+            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "95%", $"{t[i]:F} ms"));
             // 99% divide all response-time into 100
             i = GetPercentage(t, .99f);
-            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "99%", $"{t[i]:F} ms"));
+            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "99%", $"{t[i]:F} ms"));
             // 100% take highest response-time, everything is faster than this
-            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "100%", $"{t[^1]:F} ms"));
+            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "100%", $"{t[^1]:F} ms"));
         }
 
-        Console.WriteLine("Percentage of the ERROR requests served within a certain time");
+        Console.Out.WriteLine("Percentage of the ERROR requests served within a certain time");
         var errorList = errorRequests.Select(x => x.ResponseTime.TotalMilliseconds).ToList();
         errorList.Sort();
         if (errorList.Count == 0)
         {
             // there were no completed requests at all
-            Console.WriteLine("No Errors");
+            Console.Out.WriteLine("No Errors");
         }
         else
         {
             // 50% take median
             var i = GetPercentage(errorList, .5f);
-            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "50%",
+            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "50%",
                 $"{errorList[i]:F} ms"));
             // 90%
             i = GetPercentage(errorList, .9f);
-            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "90%",
+            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "90%",
                 $"{errorList[i]:F} ms"));
             // 95%
             i = GetPercentage(errorList, .95f);
-            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "95%",
+            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "95%",
                 $"{errorList[i]:F} ms"));
             // 99% divide all response-time into 100
             i = GetPercentage(errorList, .99f);
-            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "99%",
+            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "99%",
                 $"{errorList[i]:F} ms"));
             // 100% take highest response-time, everything is faster than this
-            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "100%",
+            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "100%",
                 $"{errorList[^1]:F} ms"));
         }
     }
 
-    // internal class DataComparer : IComparer<Data>, IComparer
-    // {
-    //     public int Compare(Data a, Data b)
-    //     {
-    //         return a.RequestReceivedTime < b.RequestReceivedTime ? -1 :
-    //             a.RequestReceivedTime == b.RequestReceivedTime ? 0 : 1;
-    //     }
-    // }
-
     public async Task ProcessData()
     {
-        Console.Write("Processing data...");
+        await Console.Out.WriteAsync("Processing data...");
 
         // calculate the RPS for each request data by looking at each data point and take all other points
         // before it (up to a second) and count the number of requests. This should be the accurate number of rps
@@ -338,7 +188,6 @@ internal class Manager : IDisposable
 
         int? lastCountedNumerOfRequests = null;
         int? lastIndex = null;
-        var firstOne = _responseData[0];
         var startReached = false;
         for (var index = _responseData.Count - 1; index >= 0; index--)
         {
@@ -365,7 +214,6 @@ internal class Manager : IDisposable
                     }
 
                     numOfRequests++;
-
                     if (i2 == 0)
                     {
                         startReached = true;
@@ -377,11 +225,11 @@ internal class Manager : IDisposable
             _responseData[index] = point;
             if (!(timer.Elapsed.TotalSeconds > 1)) continue;
 
-            Console.Write(".");
+            Console.Out.Write(".");
             timer.Restart();
         }
 
-        Console.WriteLine();
+        Console.Out.WriteLine();
 
         // loop until manager are done with the test
         // TODO: change this to a semaphore instead, as we just wait here anyway
@@ -391,7 +239,11 @@ internal class Manager : IDisposable
     public volatile Progress GetProgress = new();
 
     // TODO: this one should be blocked until test is done
-    public List<Data> Results => _responseData;
+    public List<DataPoint> Results => _responseData;
+    internal readonly ManualResetEvent StartClients = new(false);
+    private readonly ILogger<Manager> _logger;
+    private TopupSettings _topupSettings;
+    private readonly ILoggerFactory _loggerFactory;
 
     public void Dispose()
     {
@@ -400,21 +252,21 @@ internal class Manager : IDisposable
 
     public ValueTask PrepareForTest()
     {
-        Console.WriteLine("Preparing clients...");
+        Console.Out.WriteLine("Preparing clients...");
         // create clients
         _clients.Clear();
         for (var i = 0; i < _settings.Vu; i++)
         {
-            var c = new Client(i, this, _httpClientFactory);
+            var c = new Client(this, _httpClientFactory, _loggerFactory);
             _clients.Add(c);
         }
 
         // create request queue
-        Console.WriteLine("Preparing requests...");
+        Console.Out.WriteLine("Preparing requests...");
         PrepareRequestQueue();
 
         // activate the clients (not starting test)
-        Console.WriteLine("Activating clients...");
+        Console.Out.WriteLine("Activating clients...");
         foreach (var client in _clients)
         {
             var clientThread = new Thread(client.Run) { IsBackground = true };
@@ -428,7 +280,21 @@ internal class Manager : IDisposable
     {
         // TODO: put in trace logs
         // TODO: handle constant RPS
-        for (var i = 0; i < _settings.MaxRequests; i++)
+        if (_settings.MaxRequests.HasValue)
+        {
+            // TODO: make sure its not too many requests in MaxRequests, in that case we want to top up when going low
+            TopUpRequestQueue(_settings.MaxRequests.Value);
+        }
+        else if (_settings.Duration.HasValue)
+        {
+            // NOTE: how many requests to start with? depends on duration and how many clients that will go
+            TopUpRequestQueue(_topupSettings.TopupAmount);
+        }
+    }
+
+    private void TopUpRequestQueue(int count)
+    {
+        for (var i = 0; i < count; i++)
         {
             var method = _settings.Method switch
             {
@@ -456,8 +322,6 @@ internal class Manager : IDisposable
         }
     }
 
-    internal readonly ManualResetEvent StartClients = new(false);
-
     private void UpdateReport(ref Stopwatch timer, ref int accumulatedRequests, ref int accumulatedErrors,
         ref float accumulatedLatency)
     {
@@ -478,7 +342,7 @@ internal class Manager : IDisposable
 
     public void RunTest()
     {
-        Console.WriteLine("Starting clients...");
+        Console.Out.WriteLine("Starting clients...");
         StartClients.Set();
 
         _responseData.Clear();
@@ -491,10 +355,29 @@ internal class Manager : IDisposable
         while (true)
         {
             // we're done?
-            if (!Clientcts.IsCancellationRequested && _settings.MaxRequests == _responseData.Count)
+            if (!Clientcts.IsCancellationRequested &&
+                _settings.MaxRequests.HasValue && _settings.MaxRequests == _responseData.Count)
+                Clientcts.Cancel();
+            if (_settings.Duration.HasValue && TotalTimeTimer.Elapsed > _settings.Duration)
                 Clientcts.Cancel();
 
-            // TODO: top up requests (once we are not filling up the queue at once)
+            if (_settings.Duration.HasValue)
+            {
+                if (RequestMessageQueue.Count < _topupSettings.WarningLimit)
+                {
+
+                    _logger.LogWarning("Too few topups, request queue too low");
+                    _topupSettings = _topupSettings with { TopupAmount = _topupSettings.TopupAmount + 1000 };
+                    TopUpRequestQueue(_topupSettings.TopupAmount);
+                }
+                // top up requests (once we are not filling up the queue at once)
+                if (RequestMessageQueue.Count < _topupSettings.TopupLimit)
+                {
+                    TopUpRequestQueue(_topupSettings.TopupAmount);
+                }
+            }
+            
+            
 
             if (Clientcts.IsCancellationRequested && ResponseMessageQueue.IsEmpty) break; // quit testing
 
@@ -516,12 +399,12 @@ internal class Manager : IDisposable
         TotalTimeTimer.Stop();
     }
 
-    private static bool IsError(Data data) => (int)data.Status <= 200 && (int)data.Status >= 300;
+    private static bool IsError(DataPoint dataPoint) => (int)dataPoint.Status <= 200 && (int)dataPoint.Status >= 300;
 
     private void DequeueAndAccumulate(ref int accumulatedRequests, ref int accumulatedErrors,
         ref float accumulatedMeanLatency)
     {
-        var results = new List<Data>();
+        var results = new List<DataPoint>();
         while (!ResponseMessageQueue.IsEmpty)
         {
             if (!ResponseMessageQueue.TryDequeue(out var res))

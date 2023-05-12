@@ -1,16 +1,24 @@
-﻿using System;
+﻿#pragma warning disable CA1848
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
+using Microsoft.Extensions.Logging;
 using SharpArtillery.Reporting.Excel;
 
 namespace SharpArtillery.Reporting
 {
     internal class MyExcel
     {
-        public static void Create(string outputPath, List<Data> requestData)
+        private readonly ILogger<MyExcel> _logger;
+
+        public MyExcel(ILoggerFactory loggerFactory)
+        {
+            _logger = loggerFactory.CreateLogger<MyExcel>();
+        }
+        public void Create(string outputPath, List<DataPoint> requestData)
         {
             // create an excel https://docs.microsoft.com/en-us/office/open-xml/how-to-insert-a-chart-into-a-spreadsheet
             requestData.Sort((a, b) =>
@@ -45,14 +53,14 @@ namespace SharpArtillery.Reporting
             }
             catch (Exception e)
             {
-                Console.WriteLine(e);
+                _logger.LogError("Exception message {Message}", e.Message);
                 throw;
             }
 
-            Console.WriteLine("Excel saved!");
+            Console.Out.WriteLine("Excel saved!");
         }
 
-        private static FileStream? OpenTemplateExcel(string outputPath, Stream stream)
+        private FileStream? OpenTemplateExcel(string outputPath, Stream stream)
         {
             Start:
             try
@@ -65,11 +73,13 @@ namespace SharpArtillery.Reporting
             }
             catch (IOException e)
             {
-                Console.WriteLine(e.Message);
-                Console.Write("Close opened file and try again? (y/n) ");
+                _logger.LogError("IO Exception message {Message}", e.Message);
+                Console.Out.WriteLine(e.Message);
+                Console.Out.Write("Close opened file and try again? (y/n) ");
                 // TODO: need flag "quiet" here, to be able to have automatic process here
+                // BUG: fix below problem, as this wouldn't work if being fed a file 
                 var t = Console.ReadKey();
-                Console.WriteLine();
+                Console.Out.WriteLine();
                 if (t.Key == ConsoleKey.Y) goto Start;
             }
 

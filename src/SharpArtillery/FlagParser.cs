@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using SharpArtillery.Configs;
 using SharpArtillery.YamlConfig;
 
 namespace SharpArtillery
@@ -37,12 +37,12 @@ namespace SharpArtillery
                 .AddFlag('t', (val, c) => c.Target = val)
                 .AddFlag('o', (val, c) =>
                 {
-                    c.Report.Enabled = true;
-                    c.Report.Name = val;
-                    c.Report.Extension = ".html";
+                    c.ReportSettings.Enabled = true;
+                    c.ReportSettings.Name = val;
+                    c.ReportSettings.Extension = ".html";
                 })
                 // TODO: add an opposite parameter for exclusive, as this flag NEEDS another flag
-                .AddFlag('e', (val, c) => { c.Report.Extension = YamlHelper.GetReportExtension(val); })
+                .AddFlag('e', (val, c) => { c.ReportSettings.Extension = YamlHelper.GetReportExtension(val); })
                 .AddFlag('y', (val, c) => c.Yaml = val);
 
             var flags = parser.Parse(args);
@@ -84,7 +84,7 @@ Flags:
     }
     public class FlagParser<T> where T : class, new()
     {
-        private Dictionary<char, (Action<string, T> Callback, char[]? Exclusivness)> flags = new();
+        private readonly Dictionary<char, (Action<string, T> Callback, char[]? Exclusivness)> _flags = new();
 
         public T Parse(string[] args)
         {
@@ -97,7 +97,7 @@ Flags:
             var res = new T();
             var arguments = string.Join(" ", args);
             var usedFlags = new List<KeyValuePair<char, (Action<string, T> Callback, char[]? Exclusivness)>>();
-            foreach (var flag in flags)
+            foreach (var flag in _flags)
             {
                 var regStr = $"-{flag.Key}\\s([^\\s]*)";
                 var targetRegex = new Regex(regStr, RegexOptions.ECMAScript | RegexOptions.IgnoreCase);
@@ -130,7 +130,7 @@ Flags:
 
         public FlagParser<T> AddFlag(char flag, Action<string, T> callback, params char[]? exclusives)
         {
-            flags.Add(flag, (callback, exclusives));
+            _flags.Add(flag, (callback, exclusives));
             return this;
         }
         
