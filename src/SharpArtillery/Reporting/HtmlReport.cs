@@ -10,10 +10,6 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace SharpArtillery.Reporting;
 
-/* FEATURE:
- * - Add data table of of the requests from the main graph
- */
-
 internal static class HtmlReport
 {
     private static readonly JsonSerializerOptions Options = new()
@@ -67,8 +63,6 @@ internal static class HtmlReport
     private static string PrepareRequestData(List<DataPoint> requestData)
     {
         var counter = 0;
-        // TODO: average/aggregate up data within the time intervals, for seconds, take all the requests within a second
-        // and average out the data
         var jsonArr = requestData.Select(d => new
         {
             Time = d.RequestTimeLine.TotalSeconds, Latency = d.ResponseTime.TotalMilliseconds,

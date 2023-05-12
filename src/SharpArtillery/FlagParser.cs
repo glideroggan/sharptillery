@@ -17,7 +17,6 @@ namespace SharpArtillery
             var parser = new FlagParser<ArtilleryConfig>()
                 .AddFlag('b', (val, c) =>
                 {
-                    // TODO: handle single quotes and turn into double
                     val = val.Replace('\'', '"');
                     c.JsonContent = JsonSerializer.Deserialize<object>(val);
                 })
@@ -41,7 +40,6 @@ namespace SharpArtillery
                     c.ReportSettings.Name = val;
                     c.ReportSettings.Extension = ".html";
                 })
-                // TODO: add an opposite parameter for exclusive, as this flag NEEDS another flag
                 .AddFlag('e', (val, c) => { c.ReportSettings.Extension = YamlHelper.GetReportExtension(val); })
                 .AddFlag('y', (val, c) => c.Yaml = val);
 

@@ -49,15 +49,10 @@ internal class Client
                 try
                 {
                     var c = new CancellationTokenSource();
-                    // TODO: what happens if we have more clients than concurrent connections/sockets in the
-                    // http factory? maybe we should adjust for that
                     var httpClient = _httpClientFactory.CreateClient();
-                    // TODO: make the timeout configurable
                     c.CancelAfter(TimeSpan.FromSeconds(5));
 
                     var res = await httpClient.SendAsync(req, c.Token);
-
-                    // TODO: we should read out the message as soon as possible, to let go of that stream
                     requestResults.Status = res.StatusCode;
                 }
                 catch (AggregateException e)

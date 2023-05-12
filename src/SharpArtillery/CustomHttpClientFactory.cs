@@ -28,7 +28,6 @@ internal class CustomHttpClientFactory : ICustomHttpClientFactory, IDisposable
             case FactoryEnum.Roger:
                 var sslOptions = new SslClientAuthenticationOptions()
                 {
-                    // TODO: should be configured by flags
                     RemoteCertificateValidationCallback = delegate { return true; }
                 };
                 var socketHandler = new SocketsHttpHandler

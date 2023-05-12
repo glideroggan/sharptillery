@@ -106,11 +106,6 @@ public class MainService
     // ReSharper disable once UnusedMember.Local
     private static async Task WriteReportAsync(ReportSettings reportSettings, List<DataPoint> responseData, string endpoint)
     {
-        // FEATURE: add progress for writing in console, like function for progress
-        // FEATURE: streaming writing? Under longer tests we should stream the results into a csv that we can
-        // later turn into an excel
-        // FEATURE: we should add more info to the report about
-        // - what was the average latency on that endpoint
         switch (reportSettings.Extension)
         {
             case ".xlsx":

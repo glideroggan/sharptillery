@@ -17,7 +17,6 @@ namespace SharpArtillery;
 
 /*
  * BUG:
- *  - timeouts are not counted as errors?
  *  - Why do we get more latency running with more clients and having low constant rps?
  *      Looking at the server it still only have low connection rate, meaning that most clients aren't even sending.
  *      Maybe we can try starting each client with its own thread? Just to see if latency would go down.
@@ -55,13 +54,15 @@ internal class Manager : IDisposable
     public readonly ConcurrentQueue<HttpRequestMessage> RequestMessageQueue = new();
     public readonly ConcurrentQueue<DataPoint> ResponseMessageQueue = new();
 
+    private ManualResetEvent Done = new(false);
+
     public Manager(Settings settings, ICustomHttpClientFactory customHttpClientFactory, ILoggerFactory loggerFactory)
     {
         _settings = settings;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<Manager>();
         _httpClientFactory = customHttpClientFactory;
-        // BUG: this feature is not implemented yet, after the change of flow
+        
         if (settings.ConstantRps > 0)
         {
             _blocker = new SemaphoreSlim(settings.ConstantRps.Value, settings.ConstantRps.Value);
@@ -231,14 +232,11 @@ internal class Manager : IDisposable
 
         Console.Out.WriteLine();
 
-        // loop until manager are done with the test
-        // TODO: change this to a semaphore instead, as we just wait here anyway
-        while (!_done) await Task.Delay(1000);
+        Done.WaitOne();
     }
 
     public volatile Progress GetProgress = new();
 
-    // TODO: this one should be blocked until test is done
     public List<DataPoint> Results => _responseData;
     internal readonly ManualResetEvent StartClients = new(false);
     private readonly ILogger<Manager> _logger;
@@ -329,7 +327,6 @@ internal class Manager : IDisposable
         GetProgress.ErrorRatio = (float)accumulatedErrors / GetProgress.Requests;
         GetProgress.Rps = accumulatedRequests;
         GetProgress.MeanLatency = accumulatedLatency / accumulatedRequests;
-        // TODO: needs to change to handle <duration>
         GetProgress.PercentDone = _settings.MaxRequests > 0
             ? (int)(_responseData.Count / (float)_settings.MaxRequests * 100)
             : (int)(TotalTimeTimer.ElapsedMilliseconds / _settings.Duration!.Value.TotalMilliseconds * 100);
@@ -395,7 +392,7 @@ internal class Manager : IDisposable
 
         _averageRps = (int)(GetProgress.Requests / TotalTimeTimer.Elapsed.TotalSeconds);
 
-        _done = true;
+        Done.Set();
         TotalTimeTimer.Stop();
     }
 
