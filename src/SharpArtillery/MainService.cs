@@ -22,16 +22,21 @@ public class MainService
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<MainService>();
     }
+
     public async Task Main(string[] args)
     {
         var flags = ProgramSettings.HandleConfigsAndSettings(args);
-        if (flags == null) return;
+
+        if (flags.Quit) return;
 
         var httpClientFactory = new CustomHttpClientFactory(null, FactoryEnum.Roger, flags);
 
 
         // do we have phases?
         Settings? settings;
+        Manager? manager = null;
+        // var manager = new Manager(settings, httpClientFactory, _loggerFactory);
+        
         if (flags.YamlConfig != null)
         {
             var config = flags.YamlConfig;
@@ -42,39 +47,39 @@ public class MainService
                 settings = new Settings
                 {
                     Vu = phase.Vu,
+                    Duration = phase.Duration.HasValue ? TimeSpan.FromSeconds(phase.Duration.Value) : null,
                     Target = endpoint,
-                    MaxRequests = phase.Requests
+                    MaxRequests = phase.Requests > 0 ? phase.Requests : null
                 };
-                await RunTest(settings, httpClientFactory);
+                // manager = await RunTest(settings, httpClientFactory);
             }
-
-            return;
+        }
+        else
+        {
+            // when no yaml is used
+            settings = new Settings
+            {
+                JsonContent = flags.JsonContent,
+                Vu = flags.Clients,
+                Target = flags.Target,
+                Method = flags.Method,
+                Duration = flags.Duration,
+                MaxRequests = flags.MaxRequests,
+                Headers = flags.Headers,
+                ConstantRps = flags.ConstantRps
+            };
+            manager = await RunNonPhaseTest(settings, httpClientFactory);
         }
 
-        // when no yaml is used
-        settings = new Settings
-        {
-            JsonContent = flags.JsonContent,
-            Vu = flags.Clients,
-            Target = flags.Target,
-            Method = flags.Method,
-            Duration = flags.Duration,
-            MaxRequests = flags.MaxRequests,
-            Headers = flags.Headers,
-            ConstantRps = flags.ConstantRps
-        };
-        var manager = await RunTest(settings, httpClientFactory);
-
         if (flags.ReportSettings.Enabled)
-            await WriteReportAsync(flags.ReportSettings, manager.Results,
+            await WriteReportAsync(flags.ReportSettings, manager!.Results,
                 flags.YamlConfig != null
                     ? flags.YamlConfig.Settings.Target + flags.YamlConfig.Scenarios[0].Flow[0].Get.Url
                     : flags.Target);
     }
 
-    private async Task<Manager> RunTest(Settings settings, ICustomHttpClientFactory httpClientFactory)
+    private async Task<Manager> RunNonPhaseTest(Settings settings, ICustomHttpClientFactory httpClientFactory)
     {
-        // set up manager that will keep track of global state
         // var endpoint = flags.YamlConfig.Settings.Target + flags.YamlConfig.Scenarios[0].Flow[0].Get.Url;
         var manager = new Manager(settings, httpClientFactory, _loggerFactory);
         await manager.PrepareForTest();
@@ -88,7 +93,7 @@ public class MainService
             // TODO: https://learn.microsoft.com/en-us/dotnet/core/extensions/high-performance-logging
             Console.Out.WriteLine(
                 $"Requests: {progress.Requests} ({progress.PercentDone}%), requests per second: {progress.Rps}, " +
-                $"Error ratio: {progress.ErrorRatio*100:F}%, mean latency: {progress.MeanLatency:F} ms");
+                $"Error ratio: {progress.ErrorRatio * 100:F}%, mean latency: {progress.MeanLatency:F} ms");
             await Task.Delay(1000);
         }
 
@@ -105,14 +110,15 @@ public class MainService
 
 
     // ReSharper disable once UnusedMember.Local
-    private static async Task WriteReportAsync(ReportSettings reportSettings, List<DataPoint> responseData, string endpoint)
+    private static async Task WriteReportAsync(ReportSettings reportSettings, List<DataPoint> responseData,
+        string endpoint)
     {
         switch (reportSettings.Extension)
         {
             case ".xlsx":
                 // TODO: enable excel reporting again
                 throw new NotImplementedException();
-                // MyExcel.Create(outputPath, requests);
+            // MyExcel.Create(outputPath, requests);
             case ".html":
 #pragma warning disable IL2026
                 await HtmlReport.CreateAsync(reportSettings.Name + reportSettings.Extension, responseData, endpoint);
@@ -145,6 +151,7 @@ public class MainService
         }
 
         Console.Out.WriteLine($"Errors: {completedTasks.Count(x => !string.IsNullOrEmpty(x.Error))}");
-        Console.Out.WriteLine($"Error Text: {completedTasks.FirstOrDefault(x => !string.IsNullOrEmpty(x.Error)).Error}");
+        Console.Out.WriteLine(
+            $"Error Text: {completedTasks.FirstOrDefault(x => !string.IsNullOrEmpty(x.Error)).Error}");
     }
 }

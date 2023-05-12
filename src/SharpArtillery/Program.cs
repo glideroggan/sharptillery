@@ -7,8 +7,11 @@ using SharpArtillery;
 BUGS:
         
 TODO:
+    Remove the possibility to run it just running it without any parameters. Its more usual to bring up options at
+        this point
     ConstantRps is not implemented yet, after the change of flow
  FEATURE:
+    - Copy out version coming into description from external data, so it is easier to automate updates
     - Able to choose reporting in samples, meaning that we get samples of the request data
         in intervals and create a report from that. So for example I would like to have points
         in the graphs every second and get an average of rps, latency and so on.

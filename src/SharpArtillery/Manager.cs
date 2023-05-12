@@ -41,7 +41,6 @@ internal enum FlagEnum
 
 internal class Manager : IDisposable
 {
-    private bool _done;
     private volatile List<DataPoint> _responseData = new();
 
     public readonly Stopwatch TotalTimeTimer = new();
@@ -328,6 +327,7 @@ internal class Manager : IDisposable
         GetProgress.ErrorRatio = (float)accumulatedErrors / GetProgress.Requests;
         GetProgress.Rps = accumulatedRequests;
         GetProgress.MeanLatency = accumulatedLatency / accumulatedRequests;
+        // TODO: needs to change to handle <duration>
         GetProgress.PercentDone = _settings.MaxRequests > 0
             ? (int)(_responseData.Count / (float)_settings.MaxRequests * 100)
             : (int)(TotalTimeTimer.ElapsedMilliseconds / _settings.Duration!.Value.TotalMilliseconds * 100);

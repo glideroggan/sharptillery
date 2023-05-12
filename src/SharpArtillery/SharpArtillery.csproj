@@ -18,7 +18,7 @@
     <PackageId>nyviken-sharptillery</PackageId>
     <Authors>Roger</Authors>
     <ToolCommandName>sharptillery</ToolCommandName>
-    <Version>0.2.5</Version>
+    <Version>0.3.0</Version>
     <PackageOutputPath>./nupkg</PackageOutputPath>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Description>Load testing tool with inspiration from:

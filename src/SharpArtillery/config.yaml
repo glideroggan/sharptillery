@@ -1,6 +1,6 @@
 ﻿settings:
-#  target: "https://localhost:7180"
-  target: "https://familyhome-api.azurewebsites.net"
+  target: "https://localhost"
+#  target: "https://familyhome-api.azurewebsites.net"
 
   phases:
     - duration: 5
@@ -18,4 +18,4 @@ scenarios:
   - name: "Load test"
     flow:
       - get:
-          url: "/api/User"
+          url: "/test/get"

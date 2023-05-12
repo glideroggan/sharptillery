@@ -58,7 +58,7 @@ public class Get
 
 public class Phase
 {
-    public int Duration { get; set; }
+    public int? Duration { get; set; }
     public int ArrivalRate { get; set; }
     public string? Name { get; set; }
     public bool ExcludeGraph { get; set; }

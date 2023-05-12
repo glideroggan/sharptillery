@@ -6,6 +6,10 @@ namespace SharpArtillery.Configs;
 
 public class ArtilleryConfig
 {
+    public bool ShowInfo { get; set; }
+    public bool Quit { get; set; }
+    
+    
     public string? Yaml { get; set; }
     public string? Target { get; set; }
     public ConfigRoot? YamlConfig { get; set; }
