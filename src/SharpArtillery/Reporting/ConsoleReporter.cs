@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using SharpArtillery.Models;
 
 namespace SharpArtillery.Reporting;
 

@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SharpArtillery.Configs;
+using SharpArtillery.Models;
 using SharpArtillery.Reporting;
 
 namespace SharpArtillery;

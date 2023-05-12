@@ -1,6 +1,4 @@
-﻿using System;
-using System.Net;
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SharpArtillery;
@@ -11,6 +9,9 @@ BUGS:
 TODO:
     ConstantRps is not implemented yet, after the change of flow
  FEATURE:
+    - Able to choose reporting in samples, meaning that we get samples of the request data
+        in intervals and create a report from that. So for example I would like to have points
+        in the graphs every second and get an average of rps, latency and so on.
     - report in csv format?
     - Add data table of of the requests from the main graph
  *  - Make the ssl verification configurable through flags, like curl
@@ -42,27 +43,3 @@ var program = host.Services.GetRequiredService<MainService>();
 await program.Main(args);
 
 // await host.RunAsync();
-
-
-public struct DataPoint
-{
-    internal DateTime RequestSentTime;
-
-    /// <summary>
-    /// When the response was processed
-    /// </summary>
-    internal TimeSpan RequestTimeLine;
-
-    internal DateTime RequestReceivedTime;
-    internal TimeSpan Latency;
-    public string PhaseName;
-    public string? Error { get; set; }
-    public int ConcurrentRequests { get; set; }
-    public int RequestRate { get; set; }
-
-    public DateTime StartTime { get; set; }
-    public DateTime EndTime { get; set; }
-    public TimeSpan ResponseTime { get; set; }
-    public HttpStatusCode Status { get; set; }
-    public int Rps { get; set; }
-}

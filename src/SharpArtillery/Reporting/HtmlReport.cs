@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Text.Json;
 using System.Diagnostics.CodeAnalysis;
+using SharpArtillery.Models;
 
 namespace SharpArtillery.Reporting;
 

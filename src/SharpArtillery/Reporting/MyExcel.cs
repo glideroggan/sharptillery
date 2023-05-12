@@ -6,6 +6,7 @@ using System.IO;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using Microsoft.Extensions.Logging;
+using SharpArtillery.Models;
 using SharpArtillery.Reporting.Excel;
 
 namespace SharpArtillery.Reporting
