@@ -34,16 +34,17 @@ public class MainService
 
         // do we have phases?
         Settings? settings;
-        Manager? manager = null;
-        // var manager = new Manager(settings, httpClientFactory, _loggerFactory);
+        // Manager? manager = null;
+        var manager = new Manager(httpClientFactory, _loggerFactory);
         
         if (flags.YamlConfig != null)
         {
             var config = flags.YamlConfig;
             foreach (var phase in config.Settings.Phases)
             {
-                // TODO: yaml config don't support duration yet
                 var endpoint = flags.YamlConfig.Settings.Target + flags.YamlConfig.Scenarios[0].Flow[0].Get.Url;
+                // TODO: to fully support phases, I think we need to change some more code...
+                // https://www.artillery.io/docs/guides/guides/test-script-reference
                 settings = new Settings
                 {
                     Vu = phase.Vu,
@@ -51,7 +52,7 @@ public class MainService
                     Target = endpoint,
                     MaxRequests = phase.Requests > 0 ? phase.Requests : null
                 };
-                // manager = await RunTest(settings, httpClientFactory);
+                await RunPhaseTest(manager, settings);
             }
         }
         else
@@ -68,7 +69,7 @@ public class MainService
                 Headers = flags.Headers,
                 ConstantRps = flags.ConstantRps
             };
-            manager = await RunNonPhaseTest(settings, httpClientFactory);
+            await RunNonPhaseTest(manager, settings);
         }
 
         if (flags.ReportSettings.Enabled)
@@ -78,11 +79,33 @@ public class MainService
                     : flags.Target);
     }
 
-    private async Task<Manager> RunNonPhaseTest(Settings settings, ICustomHttpClientFactory httpClientFactory)
+    private async Task RunPhaseTest(Manager manager, Settings settings)
+    {
+        await manager.PrepareForTest(settings);
+        var runningTest = new Thread(manager.RunTest) { IsBackground = true };
+        runningTest.Start();
+        
+        // TODO: report relevant things about which phase
+        // report progress from manager
+        while (runningTest.IsAlive)
+        {
+            var progress = manager.GetProgress;
+            // TODO: https://learn.microsoft.com/en-us/dotnet/core/extensions/high-performance-logging
+            Console.Out.WriteLine(
+                $"Requests: {progress.Requests} ({progress.PercentDone}%), requests per second: {progress.Rps}, " +
+                $"Error ratio: {progress.ErrorRatio * 100:F}%, mean latency: {progress.MeanLatency:F} ms");
+            await Task.Delay(1000);
+        }
+        await manager.ProcessData();
+        
+        // TODO: to not clear out the results, we should enter results into some temporarily storage
+        // adding this to a csv file would be best, which could be parsed at the end of the test
+    }
+
+    private async Task RunNonPhaseTest(Manager manager, Settings settings)
     {
         // var endpoint = flags.YamlConfig.Settings.Target + flags.YamlConfig.Scenarios[0].Flow[0].Get.Url;
-        var manager = new Manager(settings, httpClientFactory, _loggerFactory);
-        await manager.PrepareForTest();
+        await manager.PrepareForTest(settings);
         var runningTest = new Thread(manager.RunTest) { IsBackground = true };
         runningTest.Start();
 
@@ -104,8 +127,6 @@ public class MainService
 
         StandardOutReport(manager.TotalTimeTimer, manager.Results);
         manager.Report();
-
-        return manager;
     }
 
 

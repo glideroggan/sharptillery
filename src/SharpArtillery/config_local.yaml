@@ -5,8 +5,10 @@
   report: "html"
   # Different phases
   phases:
-    - vu: 10               # VU (virtual users)
-      requests: 10000       # requests (maximum number of requests, split between vu)
+    # This will spawn 10 users every second, for 5 seconds
+    - arrivalRate: 10       # VU (virtual users) per second
+      duration: 5           # 5 seconds
+      
 
 scenarios:
   - name: "Load test"

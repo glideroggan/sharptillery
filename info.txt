@@ -1,0 +1,63 @@
+﻿TODO:
+    - make the http method a part of target, like GET https://loca, or PUT http://loca
+    - make default for clients be 1, c = 1
+NOTES:
+    - Hard to see on the client side when the server is rejecting connections. We don't get a response, instead
+BUGS:
+    - command combination -n 2 -c 1 not working
+        it fires way more requests than it should
+    - sometimes we seem to exhaust the number of sockets, it happens between runs, but waiting doesn't solve it.
+        Restarting computer does.
+        Try with different approaches regarding httpclient
+        Get bound connections
+            Get-NetTCPConnection | Group-Object -Property State, OwningProcess | Select -Property Count, Name, @{Name="ProcessName";Expression={(Get-Process -PID ($_.Name.Split(',')[-1].Trim(' '))).Name}}, Group | Sort ProcessName
+
+Ok, there will be like two modes.
+Requests mode 
+is just shoot as many requests towards an endpoint as possible, the more vu/clients the more connections, doing the same requests over and over.
+This will show a single endpoint (or flow) how much they can handle. As it will not change the vu, it will not have really close the connection on either side, which will take away the 
+connection handshake, and only concentrate on the logic and speed of the api.
+Then there is scenario mode
+This will create vu/users more lifelike, that can complete a request towards one or more endpoints. In scenario mode there will also be phases, were we can have a smaller amount
+of users in the beginning and then go up over time.
+These users do not fire requests over and over, instead they do their flow, and then quit. 
+They don't all spawn in the same time, firing the same flow at the same time, instead new users will come in every second and do the same flow.
+This will paint a more user like scenario, telling how many "users" the api will be able to handle.
+
+Request mode tells how many requests per second an endpoint will handle, while
+Scenario mode will tell how many users an api will be able to handle per second
+
+        
+
+
+What do we want to get from each request?
+    - Latency (from sent to received)
+    - statuscode
+
+Why do we see the rise in latency during second time-step?
+    Could this be that all requests gets fired at the same time, and ends up in the queue at testapi? If enough concurrency, we should handle them at the same time and not sequential?
+    Could it instead be that when getting the response, we handle the response sequential? Maybe 
+    
+
+
+Deployments:
+    Deploy api to container
+    Load test against container and save/publish results
+
+TestApi
+    docker build -f .\testapi\Dockerfile -t testapi:dev .
+    docker run --rm -d -p 80:80 -m 500m --memory-reservation 50m --cpus=0.5 testapi:dev
+    docker inspect <id> | findstr /I "nano"
+
+
+TODO:
+    - Build nuget from GH
+        https://www.youtube.com/watch?v=cUrrdAVmo4I&t=144s
+    - Connect dotnet-counters to testapi image
+        https://im5tu.io/article/2020/01/diagnostics-in-.net-core-3-using-dotnet-counters-with-docker/
+Monitors
+    dotnet-counters monitor -p 1 --counters Microsoft.AspNetCore.Hosting[total-requests,requests-per-second] Microsoft-AspNetCore-Server-Kestrel[total-connections,connections-per-second,connection-queue-length] System.Runtime[exception-count,threadpool-thread-count,threadpool-queue-length] --refresh-interval 1
+    netstat -ano | findstr /I "<pid>"
+    dotnet-counters list --runtime-version 5.0
+    dotnet-counters collect --diagnostic-port 50001
+        $Env:DOTNET_DiagnosticPorts = 50001

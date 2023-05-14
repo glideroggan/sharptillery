@@ -2,9 +2,10 @@
   "profiles": {
     "SharpArtillery": {
       "commandName": "Project",
-      "commandLineArgs": "-y config.yaml -o report"
-      //      "commandLineArgs": ""
-      //      "commandLineArgs": "-t https://nyviken.se -c 1 -n 10000 -o report"
+//      "commandLineArgs": "-y config.yaml -o report"
+      //      "commandLineArgs": "",
+//      "commandLineArgs": "-t http://localhost/test/get -c 1 -n 10000 -o report"
+//            "commandLineArgs": "-t https://nyviken.se -c 1 -n 10000 -o report"
       //      "commandLineArgs": "-y config_local.yaml -t http://localhost/test/get"
       //      "commandLineArgs": "-c 1 -n 2 -t https://localhost:8443/orgs -h x-authtoken:eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VySWQiOjEsIm5hbWUiOiJyb2dlciIsImRhdGVDcmVhdGVkIjoiMjAyMi0wNC0wMVQxNjo0ODoyNy40NTNaIiwiaXNzdWVkIjoxNjQ4ODMxNzA3NDUzLCJleHBpcmVzIjoxNjQ4ODMyNjA3NDUzfQ.inUnNS44tX0sVYHAENIcaRUGNr1n8FoqInQ-X_uLUXP3O9wo14CLZnn7sVvhnPjp1wD1zb9G17LymDv2FqFxpg"
       //      "commandLineArgs": "-t https://localhost:8443/auth -m POST -d 00:00:05 -c 1 -b {'name':'roger','password':'roger'}"

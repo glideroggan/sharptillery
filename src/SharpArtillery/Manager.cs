@@ -44,10 +44,10 @@ internal class Manager : IDisposable
     private volatile List<DataPoint> _responseData = new();
 
     public readonly Stopwatch TotalTimeTimer = new();
-    private readonly FlagEnum _flags;
-    private readonly Settings _settings;
+    private FlagEnum _flags;
+    private Settings _settings;
     private int _averageRps;
-    private readonly SemaphoreSlim _blocker;
+    private SemaphoreSlim _blocker;
     private readonly ICustomHttpClientFactory _httpClientFactory;
 
     private readonly List<Client> _clients = new();
@@ -56,29 +56,16 @@ internal class Manager : IDisposable
 
     private ManualResetEvent Done = new(false);
 
-    public Manager(Settings settings, ICustomHttpClientFactory customHttpClientFactory, ILoggerFactory loggerFactory)
+    public Manager(ICustomHttpClientFactory customHttpClientFactory, ILoggerFactory loggerFactory)
     {
-        _settings = settings;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<Manager>();
         _httpClientFactory = customHttpClientFactory;
-        
-        if (settings.ConstantRps > 0)
-        {
-            _blocker = new SemaphoreSlim(settings.ConstantRps.Value, settings.ConstantRps.Value);
-            _flags |= FlagEnum.ConstantRps;
-        }
-
-        if (settings.Duration != null && settings.MaxRequests > 0)
-            throw new ArgumentException("You can't have flag duration and requests at the same time");
-        Clientcts = new CancellationTokenSource();
-        // configure the request queue settings
-        _topupSettings = new TopupSettings(2000, 4000 * _settings.Vu, 4000);
     }
 
     record TopupSettings(int WarningLimit, int TopupAmount, int TopupLimit);
 
-    private CancellationTokenSource Clientcts { get; }
+    private CancellationTokenSource Clientcts { get; set; }
     public CancellationToken ClientKillToken => Clientcts.Token;
 
 
@@ -94,7 +81,7 @@ internal class Manager : IDisposable
         var okRequests = _responseData.Where(x => !IsError(x)).ToList();
         var errorRequests = _responseData.Where(IsError).ToList();
 
-        
+
         Console.Out.WriteLine(
             string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Target URL:", _settings.Target));
         Console.Out.WriteLine(_settings.MaxRequests > 0
@@ -141,7 +128,8 @@ internal class Manager : IDisposable
             i = GetPercentage(t, .99f);
             Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "99%", $"{t[i]:F} ms"));
             // 100% take highest response-time, everything is faster than this
-            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "100%", $"{t[^1]:F} ms"));
+            Console.Out.WriteLine(
+                string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "100%", $"{t[^1]:F} ms"));
         }
 
         Console.Out.WriteLine("Percentage of the ERROR requests served within a certain time");
@@ -248,16 +236,36 @@ internal class Manager : IDisposable
         throw new NotImplementedException();
     }
 
-    public ValueTask PrepareForTest()
+    public ValueTask PrepareForTest(Settings settings)
     {
+        _settings = settings;
+        // reset progress
+        GetProgress = new();
+        // TODO: continue here, we're clearing clients here, but maybe we should check first....
         Console.Out.WriteLine("Preparing clients...");
         // create clients
-        _clients.Clear();
-        for (var i = 0; i < _settings.Vu; i++)
+        Clientcts = new CancellationTokenSource();
+        while (_clients.Count < settings.Vu)
         {
             var c = new Client(this, _httpClientFactory, _loggerFactory);
             _clients.Add(c);
         }
+
+        // TODO: not implemented yet into the flow
+        if (settings.ConstantRps > 0)
+        {
+            _blocker = new SemaphoreSlim(settings.ConstantRps.Value, settings.ConstantRps.Value);
+            _flags |= FlagEnum.ConstantRps;
+        }
+
+        Debug.Assert(settings.Duration == null && settings.MaxRequests > 0 ||
+                     settings is { Duration: { }, MaxRequests: null }, "They are exclusive each other. " +
+                                                                       "This should be taken care of in the parsing" +
+                                                                       "of the yaml/flags.");
+        // if (settings.Duration != null && settings.MaxRequests > 0)
+        //     throw new ArgumentException("You can't have flag duration and requests at the same time");
+        // configure the request queue settings
+        _topupSettings = new TopupSettings(2000, 4000 * _settings.Vu, 4000);
 
         // create request queue
         Console.Out.WriteLine("Preparing requests...");
@@ -278,6 +286,8 @@ internal class Manager : IDisposable
     {
         // TODO: put in trace logs
         // TODO: handle constant RPS
+        RequestMessageQueue.Clear();
+
         if (_settings.MaxRequests.HasValue)
         {
             // TODO: make sure its not too many requests in MaxRequests, in that case we want to top up when going low
@@ -347,7 +357,6 @@ internal class Manager : IDisposable
         TotalTimeTimer.Start();
         var timer = Stopwatch.StartNew();
         var accumulatedErrors = 0;
-        // var accumulatedTime = TimeSpan.Zero;
         var accumulatedMeanLatency = 0f;
         var accumulatedRequests = 0;
         while (true)
@@ -363,19 +372,18 @@ internal class Manager : IDisposable
             {
                 if (RequestMessageQueue.Count < _topupSettings.WarningLimit)
                 {
-
                     _logger.LogWarning("Too few topups, request queue too low");
                     _topupSettings = _topupSettings with { TopupAmount = _topupSettings.TopupAmount + 1000 };
                     TopUpRequestQueue(_topupSettings.TopupAmount);
                 }
+
                 // top up requests (once we are not filling up the queue at once)
                 if (RequestMessageQueue.Count < _topupSettings.TopupLimit)
                 {
                     TopUpRequestQueue(_topupSettings.TopupAmount);
                 }
             }
-            
-            
+
 
             if (Clientcts.IsCancellationRequested && ResponseMessageQueue.IsEmpty) break; // quit testing
 
