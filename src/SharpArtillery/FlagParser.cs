@@ -80,7 +80,7 @@ Sharptillery -t https://blank.org -c 1 -n 100
 Sharptillery -t https://blank.org -c 10 -d 00:00:10 -o report
     Will send as many requests possible with 10 clients for 10 seconds, will create html report
 
-Version: 0.3.0
+Version: 0.3.3
 
 Flags:
 -b <json>           : content in json format

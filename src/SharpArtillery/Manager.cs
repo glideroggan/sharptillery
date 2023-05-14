@@ -45,7 +45,7 @@ internal class Manager : IDisposable
 
     public readonly Stopwatch TotalTimeTimer = new();
     private FlagEnum _flags;
-    private Settings _settings;
+    public Settings Settings;
     private int _averageRps;
     private SemaphoreSlim _blocker;
     private readonly ICustomHttpClientFactory _httpClientFactory;
@@ -83,13 +83,13 @@ internal class Manager : IDisposable
 
 
         Console.Out.WriteLine(
-            string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Target URL:", _settings.Target));
-        Console.Out.WriteLine(_settings.MaxRequests > 0
-            ? string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Max requests:", _settings.MaxRequests)
+            string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Target URL:", Settings.Target));
+        Console.Out.WriteLine(Settings.MaxRequests > 0
+            ? string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Max requests:", Settings.MaxRequests)
             : string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Duration:",
-                _settings.Duration!.Value.ToString()));
+                Settings.Duration!.Value.ToString()));
         Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Concurrency level:",
-            _settings.Vu));
+            Settings.Vu));
         Console.Out.WriteLine();
 
         Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Completed requests:",
@@ -238,7 +238,7 @@ internal class Manager : IDisposable
 
     public ValueTask PrepareForTest(Settings settings)
     {
-        _settings = settings;
+        Settings = settings;
         // reset progress
         GetProgress = new();
         // TODO: continue here, we're clearing clients here, but maybe we should check first....
@@ -265,7 +265,7 @@ internal class Manager : IDisposable
         // if (settings.Duration != null && settings.MaxRequests > 0)
         //     throw new ArgumentException("You can't have flag duration and requests at the same time");
         // configure the request queue settings
-        _topupSettings = new TopupSettings(2000, 4000 * _settings.Vu, 4000);
+        _topupSettings = new TopupSettings(2000, 4000 * Settings.Vu, 4000);
 
         // create request queue
         Console.Out.WriteLine("Preparing requests...");
@@ -288,12 +288,12 @@ internal class Manager : IDisposable
         // TODO: handle constant RPS
         RequestMessageQueue.Clear();
 
-        if (_settings.MaxRequests.HasValue)
+        if (Settings.MaxRequests.HasValue)
         {
             // TODO: make sure its not too many requests in MaxRequests, in that case we want to top up when going low
-            TopUpRequestQueue(_settings.MaxRequests.Value);
+            TopUpRequestQueue(Settings.MaxRequests.Value);
         }
-        else if (_settings.Duration.HasValue)
+        else if (Settings.Duration.HasValue)
         {
             // NOTE: how many requests to start with? depends on duration and how many clients that will go
             TopUpRequestQueue(_topupSettings.TopupAmount);
@@ -304,25 +304,25 @@ internal class Manager : IDisposable
     {
         for (var i = 0; i < count; i++)
         {
-            var method = _settings.Method switch
+            var method = Settings.Method switch
             {
                 null => HttpMethod.Get,
                 "PUT" => HttpMethod.Put,
                 "POST" => HttpMethod.Post,
                 _ => HttpMethod.Get
             };
-            var req = new HttpRequestMessage(method, _settings.Target);
-            if (_settings.Headers != null)
+            var req = new HttpRequestMessage(method, Settings.Target);
+            if (Settings.Headers != null)
             {
-                foreach (var header in _settings.Headers)
+                foreach (var header in Settings.Headers)
                 {
                     req.Headers.Add(header.Key, header.Value);
                 }
             }
 
-            if (_settings.JsonContent != null)
+            if (Settings.JsonContent != null)
             {
-                req.Content = JsonContent.Create(_settings.JsonContent);
+                req.Content = JsonContent.Create(Settings.JsonContent);
                 req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
             }
 
@@ -338,9 +338,9 @@ internal class Manager : IDisposable
         GetProgress.Rps = accumulatedRequests;
         GetProgress.MeanLatency = accumulatedLatency / accumulatedRequests;
         // TODO: needs to change to handle <duration>
-        GetProgress.PercentDone = _settings.MaxRequests > 0
-            ? (int)(_responseData.Count / (float)_settings.MaxRequests * 100)
-            : (int)(TotalTimeTimer.ElapsedMilliseconds / _settings.Duration!.Value.TotalMilliseconds * 100);
+        GetProgress.PercentDone = Settings.MaxRequests > 0
+            ? (int)(_responseData.Count / (float)Settings.MaxRequests * 100)
+            : (int)(TotalTimeTimer.ElapsedMilliseconds / Settings.Duration!.Value.TotalMilliseconds * 100);
 
         accumulatedErrors = 0;
         accumulatedLatency = 0f;
@@ -363,12 +363,12 @@ internal class Manager : IDisposable
         {
             // we're done?
             if (!Clientcts.IsCancellationRequested &&
-                _settings.MaxRequests.HasValue && _settings.MaxRequests == _responseData.Count)
+                Settings.MaxRequests.HasValue && Settings.MaxRequests == _responseData.Count)
                 Clientcts.Cancel();
-            if (_settings.Duration.HasValue && TotalTimeTimer.Elapsed > _settings.Duration)
+            if (Settings.Duration.HasValue && TotalTimeTimer.Elapsed > Settings.Duration)
                 Clientcts.Cancel();
 
-            if (_settings.Duration.HasValue)
+            if (Settings.Duration.HasValue)
             {
                 if (RequestMessageQueue.Count < _topupSettings.WarningLimit)
                 {
@@ -395,7 +395,6 @@ internal class Manager : IDisposable
         }
 
         Debug.Assert(ResponseMessageQueue.IsEmpty);
-        Debug.Assert(RequestMessageQueue.IsEmpty);
         UpdateReport(ref timer, ref accumulatedRequests, ref accumulatedErrors, ref accumulatedMeanLatency);
         Debug.Assert(_responseData.Count == GetProgress.Requests);
 

@@ -5,6 +5,8 @@ using SharpArtillery;
 
 /*
 BUGS:
+    - not adding a value after a flag, like -c -n 100
+        we should handle the "-c" case better, don't crash
     - even though report property is in the yaml, the report flag isn't set        
 TODOS:
     Remove the possibility to run it just running it without any parameters. Its more usual to bring up options at

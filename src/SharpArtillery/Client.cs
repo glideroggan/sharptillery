@@ -76,7 +76,8 @@ internal class Client
             }
             // sleep before killing thread to just let everything cool
             await Task.Delay(1000);
-            Debug.Assert(_manager.RequestMessageQueue.IsEmpty);
+            Debug.Assert(!_manager.Settings.Duration.HasValue &&
+                         _manager.RequestMessageQueue.IsEmpty);
         }
         catch (AggregateException ae)
         {

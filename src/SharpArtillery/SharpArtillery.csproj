@@ -5,7 +5,7 @@
     <TargetFramework>net7.0</TargetFramework>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
-<!--    <PublishSingleFile>false</PublishSingleFile>-->
+<!--    <PublishSingleFile>true</PublishSingleFile>-->
 <!--    <RuntimeIdentifier>win-x64</RuntimeIdentifier>-->
 <!--    <PublishTrimmed>true</PublishTrimmed>-->
     <AnalysisLevel>latest-recommended</AnalysisLevel>
@@ -18,7 +18,7 @@
     <PackageId>nyviken-sharptillery</PackageId>
     <Authors>Roger</Authors>
     <ToolCommandName>sharptillery</ToolCommandName>
-    <Version>0.3.0</Version>
+    <Version>0.3.3</Version>
     <PackageOutputPath>./nupkg</PackageOutputPath>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Description>Load testing tool with inspiration from:

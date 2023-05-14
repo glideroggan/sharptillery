@@ -57,7 +57,7 @@ public class MainService
         }
         else
         {
-            // when no yaml is used
+            // when no yaml is used``
             settings = new Settings
             {
                 JsonContent = flags.JsonContent,
