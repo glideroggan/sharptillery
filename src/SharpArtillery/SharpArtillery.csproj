@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net7.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
 <!--    <PublishSingleFile>true</PublishSingleFile>-->
@@ -32,12 +32,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="DocumentFormat.OpenXml" Version="2.14.0" />
-    <PackageReference Include="Microsoft.AspNet.WebApi.Client" Version="5.2.7" />
-    <PackageReference Include="microsoft.extensions.dependencyinjection" Version="7.0.0" />
-    <PackageReference Include="microsoft.extensions.hosting" Version="7.0.1" />
-    <PackageReference Include="Microsoft.Extensions.http" Version="6.0.0" />
-    <PackageReference Include="yamldotnet" Version="11.2.1" />
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.3.0" />
+    <PackageReference Include="Microsoft.AspNet.WebApi.Client" Version="6.0.0" />
+    <PackageReference Include="microsoft.extensions.dependencyinjection" Version="10.0.1" />
+    <PackageReference Include="microsoft.extensions.hosting" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.http" Version="10.0.1" />
+    <PackageReference Include="yamldotnet" Version="16.3.0" />
   </ItemGroup>
 
   <ItemGroup>
