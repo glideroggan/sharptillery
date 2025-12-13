@@ -202,6 +202,12 @@ public class MainService
     private void StandardOutReport(Stopwatch timer, IReadOnlyCollection<DataPoint> completedTasks)
     {
         Console.Out.WriteLine($"Test took {timer.Elapsed.TotalSeconds} seconds");
+
+        if (completedTasks.Count == 0)
+        {
+            Console.Out.WriteLine("No requests completed.");
+            return;
+        }
         // aggregate results
         var averageLatency = completedTasks.Average(r => r.ResponseTime.TotalMilliseconds);
         var maxLatency = completedTasks.MaxBy(r => r.ResponseTime).ResponseTime.TotalMilliseconds;
@@ -221,7 +227,8 @@ public class MainService
         }
 
         Console.Out.WriteLine($"Errors: {completedTasks.Count(x => !string.IsNullOrEmpty(x.Error))}");
-        Console.Out.WriteLine(
-            $"Error Text: {completedTasks.FirstOrDefault(x => !string.IsNullOrEmpty(x.Error)).Error}");
+        var firstError = completedTasks.FirstOrDefault(x => !string.IsNullOrEmpty(x.Error));
+        var firstErrorText = string.IsNullOrEmpty(firstError.Error) ? null : firstError.Error;
+        Console.Out.WriteLine($"Error Text: {firstErrorText}");
     }
 }

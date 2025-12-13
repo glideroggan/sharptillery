@@ -17,6 +17,7 @@ namespace SharpArtillery
                 .AddFlagNoValue('v', (val, c) => 
                 {
                     c.ShowInfo = true;
+                    c.Quit = true;
                 })
                 .AddFlag('b', (val, c) =>
                 {
@@ -67,6 +68,9 @@ namespace SharpArtillery
                 flags.Target = flags.YamlConfig.Settings.Target;
             }
 
+            if (!string.IsNullOrWhiteSpace(flags.Target))
+                ValidateTarget(flags.Target);
+
             // var config = flags.YamlConfig;
 
             // if flags are good and no yaml, we should still be running
@@ -78,6 +82,19 @@ namespace SharpArtillery
 
         }
 
+        private static void ValidateTarget(string target)
+        {
+            if (!Uri.TryCreate(target, UriKind.Absolute, out var uri))
+                throw new ArgumentException($"Invalid target URL: '{target}'. Expected http(s)://host[/path].");
+
+            if (!string.Equals(uri.Scheme, "http", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException($"Invalid target URL scheme: '{uri.Scheme}'. Use http or https.");
+
+            if (string.IsNullOrWhiteSpace(uri.Host))
+                throw new ArgumentException($"Invalid target URL: '{target}'. Host is missing, did you mean 'https://example.com'?");
+        }
+
         private static void WriteOutDescription()
         {
             Console.Out.WriteLine(@"
@@ -86,7 +103,8 @@ Sharptillery -t https://blank.org -c 1 -n 100
 Sharptillery -t https://blank.org -c 10 -d 00:00:10 -o report
     Will send as many requests possible with 10 clients for 10 seconds, will create html report
 
-Version: 0.3.3
+Version: 0.3.5
+
 
 Flags:
 -b <json>           : content in json format

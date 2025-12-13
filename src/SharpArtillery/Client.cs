@@ -33,13 +33,23 @@ internal class Client
         try
         {
             _manager.StartClients.WaitOne();
+            var isDurationMode = _manager.Settings.Duration.HasValue;
             // TODO: should set in a more global kill switch here, so that if cancellation is requested, but
             // we failed on dequeue, then we will want to try to dequeue again
             while (!cancellationToken.IsCancellationRequested)
             {
-                if (_manager.RequestMessageQueue.IsEmpty) break;
                 if (!_manager.RequestMessageQueue.TryDequeue(out var req))
+                {
+                    if (!isDurationMode)
+                        break;
+
+                    // Duration mode should keep running until cancellation; if the queue is briefly empty,
+                    // back off and allow the manager to top up.
+                    // TODO: we should log a warning as this could mean that the clients are not keeping up
+                    _logger.LogWarning("Request queue is empty, clients may not be keeping up.");
+                    await Task.Delay(10, cancellationToken).ConfigureAwait(false);
                     continue;
+                }
 
                 var requestResults = new DataPoint
                 {
@@ -79,9 +89,7 @@ internal class Client
                 _manager.ResponseMessageQueue.Enqueue(requestResults); 
             }
             // sleep before killing thread to just let everything cool
-            await Task.Delay(1000, cancellationToken);
-            Debug.Assert(!_manager.Settings.Duration.HasValue &&
-                         _manager.RequestMessageQueue.IsEmpty);
+            await Task.Delay(1000, cancellationToken).ConfigureAwait(false);
         }
         catch (AggregateException ae)
         {
