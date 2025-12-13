@@ -7,7 +7,9 @@ Last updated: 2025-12-13
 ## Current verified setup
 
 - `testapi` endpoint: `GET http://localhost:8080/Test/get`
+- `testapi` simulation: `GET http://localhost:8080/Test/get?simulateErrors=1` (mixed 2xx, 4xx, 5xx, and occasional slow responses)
 - Local runner: `dotnet run --project .\src\SharpArtillery\SharpArtillery.csproj -- -t http://localhost:8080/Test/get -m GET -n 10`
+- HTML report generation: `dotnet run --project .\src\SharpArtillery\SharpArtillery.csproj -- -t http://localhost:8080/Test/get -m GET -n 25 -o report`
 - VS Code task: `sharptillery: run against local testapi` (runs the local project via `dotnet run`)
 
 ## Install (global tool)
@@ -33,6 +35,34 @@ Last updated: 2025-12-13
 ## TODOs (prioritized)
 
 ## Metrics and reporting (ideas)
+
+## Implemented (checked)
+
+Last updated: 2025-12-13
+
+### Client-side metrics
+
+- [x] Timeout detection for per-request timeouts (based on `-T`), and timeout counts in the HTML report.
+- [x] Status-family counts (2xx, 3xx, 4xx, 5xx) in the HTML report.
+- [x] Status-code distribution (histogram) in the HTML report.
+- [x] Error-type distribution (histogram) in the HTML report, grouped by timeout and HTTP status codes, and enriched with exception types when present.
+- [x] Response `Content-Length` capture (when provided by the server), plus basic response length stats in the HTML report.
+
+### HTML report UX
+
+- [x] Short runs (single time bucket) now clamp the time axis to start at 0 seconds for readability.
+- [x] Status and error histograms are rendered as charts (not tables) for cleaner scanning.
+
+### Test API simulation
+
+- [x] Added `simulateErrors=1` mode to `testapi` to reliably produce a more realistic mixture of outcomes for report testing.
+
+Examples:
+
+- Generate mixed responses and some timeouts:
+    - `dotnet run --project .\src\SharpArtillery\SharpArtillery.csproj -- -t "http://localhost:8080/Test/get?simulateErrors=1" -m GET -c 4 -d 00:00:05 -T 00:00:01 -o report_sim_errors`
+- Force a body size for response-length metrics:
+    - `http://localhost:8080/Test/get?simulateErrors=1&bytes=2048`
 
 ### Client-observed metrics that are usually most useful
 
