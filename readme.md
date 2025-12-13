@@ -32,6 +32,29 @@ Last updated: 2025-12-13
 
 ## TODOs (prioritized)
 
+## Metrics and reporting (ideas)
+
+### Client-observed metrics that are usually most useful
+
+- Latency percentiles: p50, p90, p95, p99 (overall and per phase), plus min and max.
+- Status code breakdown: 2xx, 3xx, 4xx, 5xx, plus top specific codes (for example 429, 503).
+- Error taxonomy: timeout, DNS, TLS, connection reset, HTTP protocol errors, request cancellation.
+- Bytes in and out: response size distribution and throughput (bytes per second).
+- SLA or Apdex style thresholds: percent under X ms, percent over Y ms.
+- Load generator health (still client-side): achieved concurrency vs configured, queueing or scheduling delay, process CPU and memory, and GC counters.
+
+### HTML report sections that tend to be actionable
+
+- Summary tiles: RPS, p50 and p95 and p99, error rate, 4xx rate, 5xx rate, bytes per second.
+- Time series: RPS over time, latency percentiles over time, stacked status codes over time.
+- Distributions: latency histogram with percentile markers.
+- Tables: top status codes, top error categories, worst time buckets (for example “worst 1 second by p99”).
+
+### Server and container stats
+
+- For now, focus on client-observed metrics.
+- Server or container stats (CPU, memory, GC, thread pool, connection counts) are valuable, but need additional work and tooling to collect reliably.
+
 ### Next up (YAML scenario phases and flows)
 
 - [ ] Expand YAML support from “single GET” to full multi-step per-client flows, for example `get`, `post`, and sequential steps that each virtual user executes in order (`src/SharpArtillery/Models/Yaml.cs`, `src/SharpArtillery/MainService.cs`, `src/SharpArtillery/Client.cs`).

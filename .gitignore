@@ -351,3 +351,5 @@ MigrationBackup/
 /info.txt
 /push.ps1
 src/SharpArtillery/report.html
+dotnet-tools.json
+report_*.html
