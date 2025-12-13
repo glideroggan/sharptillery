@@ -15,9 +15,9 @@ Last updated: 2025-12-13
 ## Install (global tool)
 
 - Install latest stable:
-    - `dotnet tool install -g nyviken-sharptillery --version 0.3.5`
+    - `dotnet tool install -g nyviken-sharptillery --version 0.3.6`
 - Upgrade:
-    - `dotnet tool update -g nyviken-sharptillery --version 0.3.5`
+    - `dotnet tool update -g nyviken-sharptillery --version 0.3.6`
 - Run:
     - `sharptillery -t http://localhost:8080/Test/get -d 00:00:10 -c 10 -o report`
 
@@ -27,7 +27,7 @@ Last updated: 2025-12-13
     - `dotnet pack .\src\SharpArtillery\SharpArtillery.csproj -c Release --no-build`
 - Publish using an environment variable (recommended):
     - `$env:NUGET_API_KEY = "<YOUR_KEY>"`
-    - `dotnet nuget push .\src\SharpArtillery\nupkg\nyviken-sharptillery.0.3.5.nupkg --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json`
+    - `dotnet nuget push .\src\SharpArtillery\nupkg\nyviken-sharptillery.0.3.6.nupkg --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json`
 - Security note:
     - Do not paste API keys into terminals, logs, issues, or chat.
     - If an API key is ever pasted or committed, revoke it immediately and create a new one.

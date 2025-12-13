@@ -10,6 +10,9 @@
 *.userosscache
 *.sln.docstates
 
+# Local secrets
+.env
+
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
@@ -353,3 +356,4 @@ MigrationBackup/
 src/SharpArtillery/report.html
 dotnet-tools.json
 report_*.html
+**/nupkg/**
