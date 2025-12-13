@@ -103,6 +103,71 @@ internal static class HtmlReport
         var errors = requestData.Count(IsError);
         var ok = total - errors;
 
+        var responded = requestData.Where(d => d.HasResponse).ToList();
+        var status2xx = responded.Count(d => (int)d.Status >= 200 && (int)d.Status < 300);
+        var status3xx = responded.Count(d => (int)d.Status >= 300 && (int)d.Status < 400);
+        var status4xx = responded.Count(d => (int)d.Status >= 400 && (int)d.Status < 500);
+        var status5xx = responded.Count(d => (int)d.Status >= 500 && (int)d.Status < 600);
+
+        var respondedCount = responded.Count;
+        var statusHistogram = responded
+            .GroupBy(d => (int)d.Status)
+            .OrderBy(g => g.Key)
+            .Select(g => new
+            {
+                StatusCode = g.Key,
+                Count = g.Count(),
+                Ratio = respondedCount > 0 ? (double)g.Count() / respondedCount : 0d
+            })
+            .ToList();
+
+        static string? GetErrorKey(DataPoint d)
+        {
+            if (!IsError(d)) return null;
+            if (d.IsTimeout) return "timeout";
+
+            if (!string.IsNullOrWhiteSpace(d.ErrorType))
+            {
+                if (!string.IsNullOrWhiteSpace(d.ExceptionType))
+                    return $"{d.ErrorType}: {d.ExceptionType}";
+                return d.ErrorType;
+            }
+
+            // Non-2xx responses are errors, but not necessarily exceptions.
+            if ((int)d.Status != 0)
+                return $"http_{(int)d.Status}";
+
+            if (!string.IsNullOrWhiteSpace(d.ExceptionType))
+                return d.ExceptionType;
+
+            return "unknown";
+        }
+
+        var errorHistogram = requestData
+            .Select(GetErrorKey)
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .GroupBy(k => k!)
+            .OrderByDescending(g => g.Count())
+            .ThenBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => new
+            {
+                Error = g.Key,
+                Count = g.Count(),
+                Ratio = errors > 0 ? (double)g.Count() / errors : 0d
+            })
+            .ToList();
+
+        var timeouts = requestData.Count(d => d.IsTimeout);
+
+        var okKnownLengths = requestData
+            .Where(d => d.HasResponse && !IsError(d) && d.ResponseContentLengthBytes.HasValue)
+            .Select(d => (double)d.ResponseContentLengthBytes!.Value)
+            .ToList();
+        okKnownLengths.Sort();
+        var knownResponseLengthCount = okKnownLengths.Count;
+        var meanResponseLengthBytes = knownResponseLengthCount > 0 ? okKnownLengths.Average() : 0d;
+        var maxResponseLengthBytes = knownResponseLengthCount > 0 ? okKnownLengths[^1] : 0d;
+
         var okLatencies = requestData.Where(d => !IsError(d)).Select(d => d.ResponseTime.TotalMilliseconds).ToList();
         okLatencies.Sort();
 
@@ -132,6 +197,16 @@ internal static class HtmlReport
             Ok = ok,
             Errors = errors,
             ErrorRatio = total > 0 ? (double)errors / total : 0d,
+            Timeouts = timeouts,
+            Status2xx = status2xx,
+            Status3xx = status3xx,
+            Status4xx = status4xx,
+            Status5xx = status5xx,
+            StatusHistogram = statusHistogram,
+            ErrorHistogram = errorHistogram,
+            KnownResponseLengthCount = knownResponseLengthCount,
+            MeanResponseLengthBytes = meanResponseLengthBytes,
+            MaxResponseLengthBytes = maxResponseLengthBytes,
             DurationSeconds = durationSeconds,
             AverageRps = averageRps,
             MeanLatencyMs = meanLatency,

@@ -56,6 +56,8 @@ internal sealed class Client
                     StartTime = DateTime.UtcNow
                 };
                 requestResults.RequestSentTime = requestResults.StartTime;
+
+                requestResults.RequestContentLengthBytes = req.Content?.Headers.ContentLength;
                 try
                 {
                     using var c = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -66,15 +68,38 @@ internal sealed class Client
                         .SendAsync(req, HttpCompletionOption.ResponseHeadersRead, c.Token)
                         .ConfigureAwait(false);
                     requestResults.Status = res.StatusCode;
+                    requestResults.HasResponse = true;
+                    requestResults.ProtocolVersion = res.Version.ToString();
+                    requestResults.ResponseContentLengthBytes = res.Content.Headers.ContentLength;
+                }
+                catch (OperationCanceledException oce) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // Linked CTS was likely canceled by per-request timeout.
+                    requestResults.Status = 0;
+                    requestResults.IsTimeout = true;
+                    requestResults.ErrorType = "timeout";
+                    requestResults.ExceptionType = oce.GetType().FullName;
+                    requestResults.Error = oce.Message;
                 }
                 catch (AggregateException e)
                 {
                     requestResults.Status = HttpStatusCode.InternalServerError;
+                    requestResults.ErrorType = "aggregate_exception";
+                    requestResults.ExceptionType = e.GetType().FullName;
+                    requestResults.Error = e.Message;
+                }
+                catch (HttpRequestException e)
+                {
+                    requestResults.Status = HttpStatusCode.InternalServerError;
+                    requestResults.ErrorType = "http_request_exception";
+                    requestResults.ExceptionType = e.GetType().FullName;
                     requestResults.Error = e.Message;
                 }
                 catch (Exception e)
                 {
                     requestResults.Status = HttpStatusCode.InternalServerError;
+                    requestResults.ErrorType = "exception";
+                    requestResults.ExceptionType = e.GetType().FullName;
                     requestResults.Error = e.Message;
                 }
                 finally

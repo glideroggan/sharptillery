@@ -112,7 +112,7 @@ internal sealed class Manager : IDisposable
                 "AutoTune peak (sampled):",
                 $"{_autoTuneResult.Value.BestRps:F1} rps @ {_autoTuneResult.Value.BestClients} clients"));
         }
-        var mean = _responseData.Count > 0 ? okRequests.Average(r => r.ResponseTime.TotalMilliseconds) : 0;
+        var mean = okRequests.Count > 0 ? okRequests.Average(r => r.ResponseTime.TotalMilliseconds) : 0;
         Console.Out.WriteLine(
             string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Mean latency:", $"{mean:F} ms"));
         Console.Out.WriteLine();

@@ -24,4 +24,12 @@ public struct DataPoint
     public TimeSpan ResponseTime { get; set; }
     public HttpStatusCode Status { get; set; }
     public int Rps { get; set; }
+
+    public bool HasResponse { get; set; }
+    public bool IsTimeout { get; set; }
+    public string? ErrorType { get; set; }
+    public string? ExceptionType { get; set; }
+    public string? ProtocolVersion { get; set; }
+    public long? RequestContentLengthBytes { get; set; }
+    public long? ResponseContentLengthBytes { get; set; }
 }

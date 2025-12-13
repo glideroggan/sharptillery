@@ -243,7 +243,8 @@ public class MainService
             Console.Out.WriteLine($"{status.StatusCode.Key} : {status.Count}");
         }
 
-        Console.Out.WriteLine($"Errors: {completedTasks.Count(x => !string.IsNullOrEmpty(x.Error))}");
+        var errors = completedTasks.Count(d => !string.IsNullOrEmpty(d.Error) || (int)d.Status < 200 || (int)d.Status >= 300);
+        Console.Out.WriteLine($"Errors: {errors}");
         var firstError = completedTasks.FirstOrDefault(x => !string.IsNullOrEmpty(x.Error));
         var firstErrorText = string.IsNullOrEmpty(firstError.Error) ? null : firstError.Error;
         Console.Out.WriteLine($"Error Text: {firstErrorText}");

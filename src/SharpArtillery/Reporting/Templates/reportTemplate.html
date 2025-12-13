@@ -52,6 +52,14 @@
                 ['OK', String(s.ok)],
                 ['Errors', String(s.errors)],
                 ['Error ratio', pct(s.errorRatio)],
+                ['Timeouts', String(s.timeouts)],
+                ['2xx', String(s.status2xx)],
+                ['3xx', String(s.status3xx)],
+                ['4xx', String(s.status4xx)],
+                ['5xx', String(s.status5xx)],
+                ['Responses w/ length', String(s.knownResponseLengthCount)],
+                ['Mean response length', (s.meanResponseLengthBytes).toFixed(0) + ' bytes'],
+                ['Max response length', (s.maxResponseLengthBytes).toFixed(0) + ' bytes'],
                 ['Average RPS', (s.averageRps).toFixed(1)],
                 ['Mean latency', ms(s.meanLatencyMs)],
                 ['Max latency', ms(s.maxLatencyMs)],
@@ -91,6 +99,72 @@
             var table = new google.visualization.Table(document.getElementById('phase_div'));
             table.draw(data, {showRowNumber: false, width: '60%', height: '100%'});
         }
+
+        function drawStatusHistogramTable() {
+            const s = JSON.parse(document.getElementById('summary').textContent);
+            const items = s.statusHistogram ?? [];
+
+            let data = new google.visualization.DataTable();
+            data.addColumn('string', 'Status');
+            data.addColumn('number', 'Count');
+            data.addColumn({ type: 'string', role: 'tooltip' });
+
+            data.addRows(items.map(o => {
+                const status = String(o.statusCode);
+                const count = Number(o.count);
+                const ratio = Number(o.ratio);
+                const tooltip = `${status}: ${count} (${(ratio * 100).toFixed(2)}%)`;
+                return [status, count, tooltip];
+            }));
+
+            const options = {
+                title: 'Status code distribution',
+                width: 1600,
+                height: 320,
+                legend: { position: 'none' },
+                chartArea: { left: 60, right: 20, top: 50, bottom: 60 },
+                hAxis: { title: 'HTTP status' },
+                vAxis: { title: 'Count', minValue: 0 }
+            };
+
+            const chart = new google.visualization.ColumnChart(document.getElementById('status_div'));
+            chart.draw(data, options);
+        }
+
+        function drawErrorHistogramTable() {
+            const s = JSON.parse(document.getElementById('summary').textContent);
+            const items = s.errorHistogram ?? [];
+
+            // Keep the chart readable by limiting to the top N error groups.
+            const topN = 12;
+            const topItems = items.slice(0, topN);
+
+            let data = new google.visualization.DataTable();
+            data.addColumn('string', 'Error');
+            data.addColumn('number', 'Count');
+            data.addColumn({ type: 'string', role: 'tooltip' });
+
+            data.addRows(topItems.map(o => {
+                const label = String(o.error);
+                const count = Number(o.count);
+                const ratio = Number(o.ratio);
+                const tooltip = `${label}: ${count} (${(ratio * 100).toFixed(2)}% of errors)`;
+                return [label, count, tooltip];
+            }));
+
+            const options = {
+                title: 'Top error types',
+                width: 1600,
+                height: 420,
+                legend: { position: 'none' },
+                chartArea: { left: 420, right: 20, top: 50, bottom: 30 },
+                hAxis: { title: 'Count', minValue: 0 },
+                vAxis: { title: '' }
+            };
+
+            const chart = new google.visualization.BarChart(document.getElementById('error_div'));
+            chart.draw(data, options);
+        }
         
         function drawMainChart() {
             let data = new google.visualization.DataTable();
@@ -118,6 +192,9 @@
             const errorAxisMax = Math.max(0.02, maxErrorRatio * 1.2);
             const errorAxisMin = -errorAxisMax * 0.1;
 
+            const maxTime = rows.reduce((p, c) => Math.max(p, c['time'] ?? 0), 0);
+            const timeAxisMax = Math.max(1, maxTime);
+
             let chartDiv = document.getElementById('linechart_material')
 
             var options = {
@@ -136,6 +213,10 @@
                     0: { targetAxisIndex: 0 },
                     1: { targetAxisIndex: 1, type: 'bars' },
                     2: { targetAxisIndex: 2, lineWidth: 3, pointSize: 4 }
+                },
+                hAxis: {
+                    title: 'Time (s)',
+                    viewWindow: { min: 0, max: timeAxisMax }
                 },
                 vAxes: {
                     0: { title: 'Latency (ms)' },
@@ -158,6 +239,8 @@
             drawMainChart();
             drawSummaryTable();
             drawPhaseTable();
+            drawStatusHistogramTable();
+            drawErrorHistogramTable();
         }
     </script>
 </head>
@@ -165,5 +248,7 @@
     <div id="linechart_material"></div>
     <div id="summary_div"></div>
     <div id="phase_div"></div>
+    <div id="status_div"></div>
+    <div id="error_div"></div>
 </body>
 </html>
