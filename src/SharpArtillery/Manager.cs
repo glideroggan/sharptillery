@@ -39,7 +39,7 @@ internal enum FlagEnum
     ConstantRps
 }
 
-internal class Manager : IDisposable
+internal sealed class Manager : IDisposable
 {
     private volatile List<DataPoint> _responseData = new();
 
@@ -49,9 +49,9 @@ internal class Manager : IDisposable
 
     public readonly Stopwatch TotalTimeTimer = new();
     private FlagEnum _flags;
-    public Settings Settings;
+    public Settings Settings { get; private set; } = new();
     private int _averageRps;
-    private SemaphoreSlim _blocker;
+    private SemaphoreSlim? _blocker;
     private readonly ICustomHttpClientFactory _httpClientFactory;
 
     private readonly List<Client> _clients = new();
@@ -66,9 +66,10 @@ internal class Manager : IDisposable
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<Manager>();
         _httpClientFactory = customHttpClientFactory;
+        Clientcts = new CancellationTokenSource();
     }
 
-    record TopupSettings(int WarningLimit, int TopupAmount, int TopupLimit);
+    private sealed record TopupSettings(int WarningLimit, int TopupAmount, int TopupLimit);
 
     private CancellationTokenSource Clientcts { get; set; }
     public CancellationToken ClientKillToken => Clientcts.Token;
@@ -239,7 +240,7 @@ internal class Manager : IDisposable
     public List<DataPoint> Results => _responseData;
     internal readonly ManualResetEvent StartClients = new(false);
     private readonly ILogger<Manager> _logger;
-    private TopupSettings _topupSettings;
+    private TopupSettings _topupSettings = new(WarningLimit: 0, TopupAmount: 0, TopupLimit: 0);
     private readonly ILoggerFactory _loggerFactory;
 
     public void Dispose()
@@ -600,7 +601,7 @@ internal class Manager : IDisposable
     }
 }
 
-internal class Progress
+internal sealed class Progress
 {
     public int Requests { get; set; }
     public int PercentDone { get; set; }

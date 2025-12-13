@@ -46,7 +46,7 @@ public static class SpreadsheetDocumentExtensions
                 cell.CellValue = new CellValue((double)(object)val);
                 break;
             default:
-                throw new ArgumentException();
+                throw new ArgumentException($"Unsupported cell value type: {typeof(TValue)}", nameof(val));
         }
         
         cell.DataType = new EnumValue<CellValues>(dataType);
@@ -176,16 +176,24 @@ public static class SpreadsheetDocumentExtensions
 
     public static WorksheetPart? GetSheet(this SpreadsheetDocument spreadSheet, string sheetName)
     {
-        // worksheetPart = null;
-        IEnumerable<Sheet> sheets = spreadSheet.WorkbookPart.Workbook.GetFirstChild<Sheets>().Elements<Sheet>()
-            .Where(s => s.Name == sheetName);
-        if (sheets.Count() == 0)
+        var workbook = spreadSheet.WorkbookPart?.Workbook;
+        if (workbook == null) return null;
+
+        var sheetsContainer = workbook.GetFirstChild<Sheets>();
+        if (sheetsContainer == null) return null;
+
+        var sheet = sheetsContainer.Elements<Sheet>()
+            .FirstOrDefault(s => string.Equals(s.Name?.Value, sheetName, StringComparison.Ordinal));
+
+        if (sheet == null)
         {
             // The specified worksheet does not exist.
             return null;
         }
 
-        string relationshipId = sheets.First().Id.Value;
-        return (WorksheetPart)spreadSheet.WorkbookPart.GetPartById(relationshipId);
+        var relationshipId = sheet.Id?.Value;
+        if (string.IsNullOrWhiteSpace(relationshipId)) return null;
+
+        return spreadSheet.WorkbookPart!.GetPartById(relationshipId) as WorksheetPart;
     }
 }

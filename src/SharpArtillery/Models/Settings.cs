@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace SharpArtillery.Configs;
 
-internal class Settings
+internal sealed class Settings
 {
     public int? ConstantRps { get; set; }
     public TimeSpan? Duration { get; set; }

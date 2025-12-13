@@ -11,7 +11,7 @@ using SharpArtillery.Reporting.Excel;
 
 namespace SharpArtillery.Reporting
 {
-    internal class MyExcel
+    internal sealed class MyExcel
     {
         private readonly ILogger<MyExcel> _logger;
 
@@ -39,7 +39,8 @@ namespace SharpArtillery.Reporting
                 using var spreadSheet = SpreadsheetDocument.Open(outputPath, true);
                 var row = 2U;
                 var workSheetPart = spreadSheet.GetSheet("report")!;
-                var sheetData = workSheetPart.Worksheet.GetFirstChild<SheetData>();
+                var sheetData = workSheetPart.Worksheet.GetFirstChild<SheetData>()
+                               ?? workSheetPart.Worksheet.AppendChild(new SheetData());
                 foreach (var data in requestData)
                 {
                     spreadSheet.InsertData(sheetData, $"{data.RequestSentTime:O}", "A", row, CellValues.String);

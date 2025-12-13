@@ -52,9 +52,24 @@ public class MainService
             if (flags.YamlConfig != null)
             {
                 var config = flags.YamlConfig;
-                foreach (var phase in config.Settings.Phases)
+
+                var baseTarget = config.Settings.Target
+                                 ?? throw new ArgumentException("YAML config is missing settings.target");
+                var phases = config.Settings.Phases
+                             ?? throw new ArgumentException("YAML config is missing settings.phases");
+                var getUrl = config.Scenarios?
+                                 .FirstOrDefault()?
+                                 .Flow?
+                                 .FirstOrDefault()?
+                                 .Get?
+                                 .Url
+                             ?? throw new ArgumentException(
+                                 "YAML config is missing scenarios[0].flow[0].get.url");
+
+                var endpoint = baseTarget + getUrl;
+
+                foreach (var phase in phases)
                 {
-                    var endpoint = flags.YamlConfig.Settings.Target + flags.YamlConfig.Scenarios[0].Flow[0].Get.Url;
                     // TODO: to fully support phases, I think we need to change some more code...
                     // https://www.artillery.io/docs/guides/guides/test-script-reference
                     settings = new Settings
@@ -76,6 +91,9 @@ public class MainService
 
                     await RunPhaseTest(manager, settings);
                 }
+
+                if (flags.ReportSettings.Enabled)
+                    await WriteReportAsync(flags.ReportSettings, manager.Results, endpoint);
             }
             else
             {
@@ -91,11 +109,13 @@ public class MainService
                 if (!flags.Duration.HasValue && !flags.MaxRequests.HasValue)
                     throw new ArgumentException("You must specify either duration (-d HH:MM:SS) or max requests (-n <number>). ");
 
+                var target = flags.Target ?? throw new ArgumentException("Target URL is required (-t <url>)");
+
                 settings = new Settings
                 {
                     JsonContent = flags.JsonContent,
                     Vu = flags.Clients,
-                    Target = flags.Target,
+                    Target = target,
                     Method = flags.Method,
                     Duration = flags.Duration,
                     MaxRequests = flags.MaxRequests,
@@ -113,13 +133,10 @@ public class MainService
                         : null
                 };
                 await RunNonPhaseTest(manager, settings);
-            }
 
-            if (flags.ReportSettings.Enabled)
-                await WriteReportAsync(flags.ReportSettings, manager!.Results,
-                    flags.YamlConfig != null
-                        ? flags.YamlConfig.Settings.Target + flags.YamlConfig.Scenarios[0].Flow[0].Get.Url
-                        : flags.Target);
+                if (flags.ReportSettings.Enabled)
+                    await WriteReportAsync(flags.ReportSettings, manager.Results, target);
+            }
         }
         catch (ArgumentException e)
         {
@@ -128,7 +145,7 @@ public class MainService
         }
     }
 
-    private async Task RunPhaseTest(Manager manager, Settings settings)
+    private static async Task RunPhaseTest(Manager manager, Settings settings)
     {
         await manager.PrepareForTest(settings);
         var runningTest = new Thread(manager.RunTest) { IsBackground = true };
@@ -151,7 +168,7 @@ public class MainService
         // adding this to a csv file would be best, which could be parsed at the end of the test
     }
 
-    private async Task RunNonPhaseTest(Manager manager, Settings settings)
+    private static async Task RunNonPhaseTest(Manager manager, Settings settings)
     {
         // var endpoint = flags.YamlConfig.Settings.Target + flags.YamlConfig.Scenarios[0].Flow[0].Get.Url;
         await manager.PrepareForTest(settings);
@@ -199,7 +216,7 @@ public class MainService
         }
     }
 
-    private void StandardOutReport(Stopwatch timer, IReadOnlyCollection<DataPoint> completedTasks)
+    private static void StandardOutReport(Stopwatch timer, List<DataPoint> completedTasks)
     {
         Console.Out.WriteLine($"Test took {timer.Elapsed.TotalSeconds} seconds");
 

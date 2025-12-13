@@ -10,7 +10,7 @@ internal enum FactoryEnum
 {
     Microsoft, Roger
 }
-internal class CustomHttpClientFactory : ICustomHttpClientFactory, IDisposable
+internal sealed class CustomHttpClientFactory : ICustomHttpClientFactory, IDisposable
 {
     private readonly IHttpClientFactory? _httpClientFactory;
     private readonly FactoryEnum _factory;
@@ -26,13 +26,8 @@ internal class CustomHttpClientFactory : ICustomHttpClientFactory, IDisposable
             case FactoryEnum.Microsoft:
                 break;
             case FactoryEnum.Roger:
-                var sslOptions = new SslClientAuthenticationOptions()
-                {
-                    RemoteCertificateValidationCallback = delegate { return true; }
-                };
                 var socketHandler = new SocketsHttpHandler
                 {
-                    SslOptions = sslOptions,
                     PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
                     PooledConnectionLifetime = Timeout.InfiniteTimeSpan,
                     // TODO: maybe should scale with the number of concurrent clients?
@@ -46,7 +41,7 @@ internal class CustomHttpClientFactory : ICustomHttpClientFactory, IDisposable
                 }
                 break;
             default:
-                throw new ArgumentOutOfRangeException(nameof(_factory));
+                throw new ArgumentOutOfRangeException(nameof(factory), factory, "Unknown HTTP client factory");
         }
         
     }
@@ -62,7 +57,7 @@ internal class CustomHttpClientFactory : ICustomHttpClientFactory, IDisposable
             case FactoryEnum.Roger:
                 return _con!;
             default:
-                throw new ArgumentOutOfRangeException();
+                throw new InvalidOperationException($"Unknown HTTP client factory: {_factory}");
         }
     }
 

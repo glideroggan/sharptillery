@@ -10,7 +10,6 @@ namespace SharpArtillery.Reporting;
 internal static class ConsoleReporter
 {
     private static (int Left, int Top) cursor;
-    private static (int Left, int Top) emittingCursor;
     private static List<string> emitBuffer = new();
 
     internal static void Report(Stopwatch durationTimer, List<DataPoint> completedTasks, List<Task<DataPoint>> tasks,
@@ -26,7 +25,6 @@ internal static class ConsoleReporter
     public static void Init((int Left, int Top) initPos)
     {
         cursor = initPos;
-        emittingCursor = (initPos.Left, initPos.Top + 10);
     }
 
     public static void Emit(string s)

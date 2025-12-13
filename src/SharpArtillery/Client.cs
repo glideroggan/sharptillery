@@ -15,7 +15,7 @@ internal interface ICustomHttpClientFactory
     HttpClient CreateClient();
 }
 
-internal class Client
+internal sealed class Client
 {
     private readonly Manager _manager;
     private readonly ICustomHttpClientFactory _httpClientFactory;
@@ -55,6 +55,7 @@ internal class Client
                 {
                     StartTime = DateTime.UtcNow
                 };
+                requestResults.RequestSentTime = requestResults.StartTime;
                 try
                 {
                     using var c = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -84,6 +85,7 @@ internal class Client
                 requestResults.RequestReceivedTime = DateTime.UtcNow;
                 requestResults.EndTime = DateTime.UtcNow;
                 requestResults.ResponseTime = requestResults.EndTime - requestResults.StartTime;
+                requestResults.Latency = requestResults.ResponseTime;
                 requestResults.RequestTimeLine = _manager.TotalTimeTimer.Elapsed;
                 
                 _manager.ResponseMessageQueue.Enqueue(requestResults); 

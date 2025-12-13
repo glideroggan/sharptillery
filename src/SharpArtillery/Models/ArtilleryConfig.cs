@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using SharpArtillery.Models;
 using SharpArtillery.YamlConfig;
 
 namespace SharpArtillery.Configs;

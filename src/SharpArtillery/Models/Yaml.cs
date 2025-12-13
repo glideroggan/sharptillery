@@ -5,7 +5,7 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace SharpArtillery.YamlConfig;
 
-internal class YamlHelper
+internal sealed class YamlHelper
 {
     internal static ConfigRoot ReadYaml(string path)
     {
@@ -28,7 +28,7 @@ internal class YamlHelper
 
 public class ConfigRoot
 {
-    public Config Settings { get; set; }
+    public Config Settings { get; set; } = new();
     public List<Scenario>? Scenarios { get; set; }
 }
 
@@ -48,10 +48,10 @@ public class Scenario
 
 public class Flow
 {
-    public Get? Get { get; set; }
+    public GetRequest? Get { get; set; }
 }
 
-public class Get
+public class GetRequest
 {
     public string? Url { get; set; }
 }

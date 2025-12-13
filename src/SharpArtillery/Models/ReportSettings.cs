@@ -1,4 +1,6 @@
-﻿public class ReportSettings
+﻿namespace SharpArtillery.Models;
+
+public class ReportSettings
 {
     public bool Enabled { get; set; }
     public string Name { get; set; } = "report";

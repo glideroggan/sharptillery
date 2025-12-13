@@ -5,16 +5,16 @@ namespace SharpArtillery.Models;
 
 public struct DataPoint
 {
-    internal DateTime RequestSentTime;
+    internal DateTime RequestSentTime { get; set; }
 
     /// <summary>
     /// When the response was processed
     /// </summary>
-    internal TimeSpan RequestTimeLine;
+    internal TimeSpan RequestTimeLine { get; set; }
 
     internal DateTime RequestReceivedTime;
-    internal TimeSpan Latency;
-    public string PhaseName;
+    internal TimeSpan Latency { get; set; }
+    public string? PhaseName { get; set; }
     public string? Error { get; set; }
     public int ConcurrentRequests { get; set; }
     public int RequestRate { get; set; }
