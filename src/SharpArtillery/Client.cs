@@ -47,9 +47,9 @@ internal class Client
                 };
                 try
                 {
-                    using var c = new CancellationTokenSource();
+                    using var c = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                     var httpClient = _httpClientFactory.CreateClient();
-                    c.CancelAfter(TimeSpan.FromSeconds(5));
+                    c.CancelAfter(_manager.Settings.RequestTimeout ?? TimeSpan.FromSeconds(5));
 
                     using var res = await httpClient
                         .SendAsync(req, HttpCompletionOption.ResponseHeadersRead, c.Token)

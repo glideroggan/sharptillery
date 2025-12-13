@@ -14,10 +14,17 @@ public class ArtilleryConfig
     public string? Target { get; set; }
     public ConfigRoot? YamlConfig { get; set; }
     public TimeSpan? Duration { get; set; }
+    public TimeSpan? RequestTimeout { get; set; }
     public int? RequestRate { get; set; }
 
     public int? MaxRequests { get; set; }
-    public int Clients { get; set; }
+    public int Clients { get; set; } = 1;
+
+    public bool AutoTuneMaxRps { get; set; }
+    public int? AutoTuneMaxClients { get; set; }
+    public int? AutoTuneStep { get; set; }
+    public TimeSpan? AutoTuneInterval { get; set; }
+    public float? AutoTuneMaxErrorRatio { get; set; }
     public ReportSettings ReportSettings { get; } = new();
     public int ConstantRps { get; set; }
     public Dictionary<string, string> Headers { get; set; } = new();

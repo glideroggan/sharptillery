@@ -20,30 +20,37 @@ namespace SharpArtillery
                 })
                 .AddFlag('b', (val, c) =>
                 {
-                    val = val.Replace('\'', '"');
+                    val = val!.Replace('\'', '"');
                     c.JsonContent = JsonSerializer.Deserialize<object>(val);
                 })
                 .AddFlag('m', (val, c) => c.Method = val)
                 .AddFlag('h', (val, c) =>
                 {
-                    var values = val.Split(':');
+                    var values = val!.Split(':');
                     c.Headers.Add(values[0], values[1]);
                 })
-                .AddFlag('n', (val, c) => c.MaxRequests = int.Parse(val, CultureInfo.InvariantCulture))
-                .AddFlag('r', (val, c) => c.ConstantRps = int.Parse(val, CultureInfo.InvariantCulture),
+                .AddFlag('n', (val, c) => c.MaxRequests = int.Parse(val!, CultureInfo.InvariantCulture))
+                .AddFlag('r', (val, c) => c.ConstantRps = int.Parse(val!, CultureInfo.InvariantCulture),
                     'n')
                 .AddFlag('d',
-                    (val, c) => c.Duration = TimeSpan.Parse(val, CultureInfo.InvariantCulture),
+                    (val, c) => c.Duration = TimeSpan.Parse(val!, CultureInfo.InvariantCulture),
                     'n')
-                .AddFlag('c', (val, c) => c.Clients = int.Parse(val, CultureInfo.InvariantCulture))
+                .AddFlag('T',
+                    (val, c) => c.RequestTimeout = TimeSpan.Parse(val!, CultureInfo.InvariantCulture))
+                .AddFlagNoValue('A', (val, c) => c.AutoTuneMaxRps = true)
+                .AddFlag('M', (val, c) => c.AutoTuneMaxClients = int.Parse(val!, CultureInfo.InvariantCulture))
+                .AddFlag('S', (val, c) => c.AutoTuneStep = int.Parse(val!, CultureInfo.InvariantCulture))
+                .AddFlag('I', (val, c) => c.AutoTuneInterval = TimeSpan.Parse(val!, CultureInfo.InvariantCulture))
+                .AddFlag('E', (val, c) => c.AutoTuneMaxErrorRatio = float.Parse(val!, CultureInfo.InvariantCulture))
+                .AddFlag('c', (val, c) => c.Clients = int.Parse(val!, CultureInfo.InvariantCulture))
                 .AddFlag('t', (val, c) => c.Target = val)
                 .AddFlag('o', (val, c) =>
                 {
                     c.ReportSettings.Enabled = true;
-                    c.ReportSettings.Name = val;
+                    c.ReportSettings.Name = val!;
                     c.ReportSettings.Extension = ".html";
                 })
-                .AddFlag('e', (val, c) => { c.ReportSettings.Extension = YamlHelper.GetReportExtension(val); })
+                .AddFlag('e', (val, c) => { c.ReportSettings.Extension = YamlHelper.GetReportExtension(val!); })
                 .AddFlag('y', (val, c) => c.Yaml = val);
 
             
@@ -88,6 +95,12 @@ Flags:
 -n <number>         : Max number of requests to send
 -c <number>         : Virtual users. Parallel clients sending requests.
 -d HH:MM:SS         : Duration to run for
+-T HH:MM:SS         : Per-request timeout (default: 00:00:05)
+-A                 : Auto-tune to find max sustainable RPS (duration mode only)
+-M <number>         : Auto-tune max clients (default: 256)
+-S <number>         : Auto-tune step (default: 5)
+-I HH:MM:SS         : Auto-tune interval (default: 00:00:05)
+-E <ratio>          : Auto-tune max error ratio, e.g. 0.02 for 2% (default: 0.02)
 -r <number>         : Requests per second, the program will try to uphold this number of requests.
 -o <name of report> : Outputs a report with name <name of report> in html (default)
 -e <report type>    : Type of report (html/excel)
@@ -126,7 +139,7 @@ Flags:
                 if (string.IsNullOrWhiteSpace(token))
                     continue;
 
-                if (!token.StartsWith("-", StringComparison.Ordinal) || token.Length != 2)
+                if (token.Length != 2 || token[0] != '-')
                     continue;
 
                 var flagChar = token[1];
@@ -149,7 +162,7 @@ Flags:
                     throw new ArgumentException($"Flag -{flagChar} requires a value");
 
                 // If the next token looks like another flag, treat it as missing value.
-                if (value.Length == 2 && value.StartsWith("-", StringComparison.Ordinal) && _flags.ContainsKey(value[1]))
+                if (value.Length == 2 && value[0] == '-' && _flags.ContainsKey(value[1]))
                     throw new ArgumentException($"Flag -{flagChar} requires a value");
 
                 flagDef.Callback(value, res);

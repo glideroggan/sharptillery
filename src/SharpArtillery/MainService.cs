@@ -25,68 +25,107 @@ public class MainService
 
     public async Task Main(string[] args)
     {
-        ArtilleryConfig flags;
         try
         {
-            flags = ProgramSettings.HandleConfigsAndSettings(args);
+            ArtilleryConfig flags;
+            try
+            {
+                flags = ProgramSettings.HandleConfigsAndSettings(args);
+            }
+            catch (ArgumentException e)
+            {
+                Console.Error.WriteLine($"Error: {e.Message}");
+                Environment.ExitCode = 2;
+                return;
+            }
+
+            if (flags.Quit) return;
+
+            var httpClientFactory = new CustomHttpClientFactory(null, FactoryEnum.Roger, flags);
+
+
+            // do we have phases?
+            Settings? settings;
+            // Manager? manager = null;
+            var manager = new Manager(httpClientFactory, _loggerFactory);
+            
+            if (flags.YamlConfig != null)
+            {
+                var config = flags.YamlConfig;
+                foreach (var phase in config.Settings.Phases)
+                {
+                    var endpoint = flags.YamlConfig.Settings.Target + flags.YamlConfig.Scenarios[0].Flow[0].Get.Url;
+                    // TODO: to fully support phases, I think we need to change some more code...
+                    // https://www.artillery.io/docs/guides/guides/test-script-reference
+                    settings = new Settings
+                    {
+                        Vu = phase.Vu,
+                        Duration = phase.Duration.HasValue ? TimeSpan.FromSeconds(phase.Duration.Value) : null,
+                        Target = endpoint,
+                        MaxRequests = phase.Requests > 0 ? phase.Requests : null,
+                        RequestTimeout = config.Settings.RequestTimeoutSeconds.HasValue
+                            ? TimeSpan.FromSeconds(config.Settings.RequestTimeoutSeconds.Value)
+                            : null
+                    };
+
+                    if (settings.Duration == null && settings.MaxRequests == null)
+                        throw new ArgumentException($"Phase '{phase.Name ?? "(unnamed)"}' must specify either duration or requests.");
+
+                    if (settings.Duration != null && settings.MaxRequests != null)
+                        throw new ArgumentException($"Phase '{phase.Name ?? "(unnamed)"}' cannot specify both duration and requests.");
+
+                    await RunPhaseTest(manager, settings);
+                }
+            }
+            else
+            {
+                // when no yaml is used``
+                if (flags.AutoTuneMaxRps)
+                {
+                    if (!flags.Duration.HasValue)
+                        throw new ArgumentException("Auto-tune (-A) requires duration mode (-d HH:MM:SS)");
+                    if (flags.MaxRequests.HasValue)
+                        throw new ArgumentException("Auto-tune (-A) is not supported with max requests (-n)");
+                }
+
+                if (!flags.Duration.HasValue && !flags.MaxRequests.HasValue)
+                    throw new ArgumentException("You must specify either duration (-d HH:MM:SS) or max requests (-n <number>). ");
+
+                settings = new Settings
+                {
+                    JsonContent = flags.JsonContent,
+                    Vu = flags.Clients,
+                    Target = flags.Target,
+                    Method = flags.Method,
+                    Duration = flags.Duration,
+                    MaxRequests = flags.MaxRequests,
+                    Headers = flags.Headers,
+                    ConstantRps = flags.ConstantRps,
+                    RequestTimeout = flags.RequestTimeout,
+                    AutoTune = flags.AutoTuneMaxRps
+                        ? new AutoTuneSettings(
+                            MaxClients: flags.AutoTuneMaxClients ?? 256,
+                            Step: flags.AutoTuneStep ?? 5,
+                            Interval: flags.AutoTuneInterval ?? TimeSpan.FromSeconds(5),
+                            MaxErrorRatio: flags.AutoTuneMaxErrorRatio ?? 0.02f,
+                            MinImprovementRatio: 0.01f,
+                            MaxStallIntervals: 3)
+                        : null
+                };
+                await RunNonPhaseTest(manager, settings);
+            }
+
+            if (flags.ReportSettings.Enabled)
+                await WriteReportAsync(flags.ReportSettings, manager!.Results,
+                    flags.YamlConfig != null
+                        ? flags.YamlConfig.Settings.Target + flags.YamlConfig.Scenarios[0].Flow[0].Get.Url
+                        : flags.Target);
         }
         catch (ArgumentException e)
         {
             Console.Error.WriteLine($"Error: {e.Message}");
             Environment.ExitCode = 2;
-            return;
         }
-
-        if (flags.Quit) return;
-
-        var httpClientFactory = new CustomHttpClientFactory(null, FactoryEnum.Roger, flags);
-
-
-        // do we have phases?
-        Settings? settings;
-        // Manager? manager = null;
-        var manager = new Manager(httpClientFactory, _loggerFactory);
-        
-        if (flags.YamlConfig != null)
-        {
-            var config = flags.YamlConfig;
-            foreach (var phase in config.Settings.Phases)
-            {
-                var endpoint = flags.YamlConfig.Settings.Target + flags.YamlConfig.Scenarios[0].Flow[0].Get.Url;
-                // TODO: to fully support phases, I think we need to change some more code...
-                // https://www.artillery.io/docs/guides/guides/test-script-reference
-                settings = new Settings
-                {
-                    Vu = phase.Vu,
-                    Duration = phase.Duration.HasValue ? TimeSpan.FromSeconds(phase.Duration.Value) : null,
-                    Target = endpoint,
-                    MaxRequests = phase.Requests > 0 ? phase.Requests : null
-                };
-                await RunPhaseTest(manager, settings);
-            }
-        }
-        else
-        {
-            // when no yaml is used``
-            settings = new Settings
-            {
-                JsonContent = flags.JsonContent,
-                Vu = flags.Clients,
-                Target = flags.Target,
-                Method = flags.Method,
-                Duration = flags.Duration,
-                MaxRequests = flags.MaxRequests,
-                Headers = flags.Headers,
-                ConstantRps = flags.ConstantRps
-            };
-            await RunNonPhaseTest(manager, settings);
-        }
-
-        if (flags.ReportSettings.Enabled)
-            await WriteReportAsync(flags.ReportSettings, manager!.Results,
-                flags.YamlConfig != null
-                    ? flags.YamlConfig.Settings.Target + flags.YamlConfig.Scenarios[0].Flow[0].Get.Url
-                    : flags.Target);
     }
 
     private async Task RunPhaseTest(Manager manager, Settings settings)

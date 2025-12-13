@@ -43,6 +43,10 @@ internal class Manager : IDisposable
 {
     private volatile List<DataPoint> _responseData = new();
 
+    private long _totalRequests;
+    private long _totalErrors;
+    private (int BestClients, double BestRps)? _autoTuneResult;
+
     public readonly Stopwatch TotalTimeTimer = new();
     private FlagEnum _flags;
     public Settings Settings;
@@ -99,8 +103,14 @@ internal class Manager : IDisposable
             errorRequests.Count));
         Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Total time:",
             $"{TotalTimeTimer.Elapsed.TotalSeconds} s"));
-        Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Requests per second:",
+        Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Average RPS:",
             _averageRps));
+        if (_autoTuneResult.HasValue)
+        {
+            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}",
+                "AutoTune peak (sampled):",
+                $"{_autoTuneResult.Value.BestRps:F1} rps @ {_autoTuneResult.Value.BestClients} clients"));
+        }
         var mean = _responseData.Count > 0 ? okRequests.Average(r => r.ResponseTime.TotalMilliseconds) : 0;
         Console.Out.WriteLine(
             string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Mean latency:", $"{mean:F} ms"));
@@ -240,6 +250,11 @@ internal class Manager : IDisposable
     public ValueTask PrepareForTest(Settings settings)
     {
         Settings = settings;
+        if (Settings.Vu < 1)
+            throw new ArgumentException("Concurrency level must be at least 1 (-c <number>). ");
+        _autoTuneResult = null;
+        Interlocked.Exchange(ref _totalRequests, 0);
+        Interlocked.Exchange(ref _totalErrors, 0);
         // reset progress
         GetProgress = new();
         // recreate clients per run so they bind to the current cancellation token
@@ -257,10 +272,11 @@ internal class Manager : IDisposable
             _flags |= FlagEnum.ConstantRps;
         }
 
-        Debug.Assert(settings.Duration == null && settings.MaxRequests > 0 ||
-                     settings is { Duration: { }, MaxRequests: null }, "They are exclusive each other. " +
-                                                                       "This should be taken care of in the parsing" +
-                                                                       "of the yaml/flags.");
+        if (settings.Duration == null && settings.MaxRequests == null)
+            throw new ArgumentException("You must specify either duration (-d HH:MM:SS) or max requests (-n <number>). ");
+
+        if (settings.Duration != null && settings.MaxRequests != null)
+            throw new ArgumentException("Duration (-d) and max requests (-n) are mutually exclusive.");
         // if (settings.Duration != null && settings.MaxRequests > 0)
         //     throw new ArgumentException("You can't have flag duration and requests at the same time");
         // configure the request queue settings
@@ -278,6 +294,124 @@ internal class Manager : IDisposable
         }
 
         return new ValueTask(Task.CompletedTask);
+    }
+
+    private void AddClients(int count)
+    {
+        if (count <= 0) return;
+        for (var i = 0; i < count; i++)
+        {
+            var client = new Client(this, _httpClientFactory, _loggerFactory);
+            _clients.Add(client);
+            _clientTasks.Add(Task.Run(() => client.RunAsync(ClientKillToken), ClientKillToken));
+        }
+
+        Settings.Vu += count;
+    }
+
+    private async Task RunAutoTuneAsync(AutoTuneSettings tune)
+    {
+        if (tune.MaxClients <= 0) throw new ArgumentException("Auto-tune max clients must be > 0");
+        if (tune.Step <= 0) throw new ArgumentException("Auto-tune step must be > 0");
+        if (tune.Interval <= TimeSpan.Zero) throw new ArgumentException("Auto-tune interval must be > 0");
+
+        var bestRps = 0d;
+        var bestClients = Settings.Vu;
+        var stallCount = 0;
+
+        while (!Clientcts.IsCancellationRequested)
+        {
+            var startRequests = Volatile.Read(ref _totalRequests);
+            var startErrors = Volatile.Read(ref _totalErrors);
+            var startClients = Settings.Vu;
+            var intervalTimer = Stopwatch.StartNew();
+
+            try
+            {
+                await Task.Delay(tune.Interval, ClientKillToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Take a final partial sample (important for short runs where the last full interval never completes).
+                var endRequestsCanceled = Volatile.Read(ref _totalRequests);
+                var endErrorsCanceled = Volatile.Read(ref _totalErrors);
+
+                var deltaRequestsCanceled = endRequestsCanceled - startRequests;
+                var deltaErrorsCanceled = endErrorsCanceled - startErrors;
+                var secondsCanceled = intervalTimer.Elapsed.TotalSeconds;
+
+                if (secondsCanceled > 0 && deltaRequestsCanceled > 0)
+                {
+                    var rpsCanceled = deltaRequestsCanceled / secondsCanceled;
+                    var errorRatioCanceled = (double)deltaErrorsCanceled / deltaRequestsCanceled;
+
+                    if (rpsCanceled > bestRps * (1 + tune.MinImprovementRatio))
+                    {
+                        bestRps = rpsCanceled;
+                        bestClients = startClients;
+                    }
+
+                    Console.Out.WriteLine(
+                        $"AutoTune(final): clients={startClients}, rps={rpsCanceled:F1}, err={errorRatioCanceled:P1}, best={bestRps:F1} @ {bestClients}");
+                }
+
+                break;
+            }
+
+            var endRequests = Volatile.Read(ref _totalRequests);
+            var endErrors = Volatile.Read(ref _totalErrors);
+
+            var deltaRequests = endRequests - startRequests;
+            var deltaErrors = endErrors - startErrors;
+
+            var seconds = tune.Interval.TotalSeconds;
+            var rps = seconds > 0 ? deltaRequests / seconds : 0;
+            var errorRatio = deltaRequests > 0 ? (double)deltaErrors / deltaRequests : 0;
+
+            if (rps > bestRps * (1 + tune.MinImprovementRatio))
+            {
+                bestRps = rps;
+                bestClients = startClients;
+                stallCount = 0;
+            }
+            else
+            {
+                stallCount++;
+            }
+
+            Console.Out.WriteLine(
+                $"AutoTune: clients={startClients}, rps={rps:F1}, err={errorRatio:P1}, best={bestRps:F1} @ {bestClients}");
+
+            if (errorRatio > tune.MaxErrorRatio)
+            {
+                _autoTuneResult = (bestClients, bestRps);
+                Console.Out.WriteLine(
+                    $"AutoTune: stopping (error ratio {errorRatio:P1} > {tune.MaxErrorRatio:P1}). Best was {bestRps:F1} rps @ {bestClients} clients.");
+                Clientcts.Cancel();
+                break;
+            }
+
+            if (stallCount >= tune.MaxStallIntervals)
+            {
+                _autoTuneResult = (bestClients, bestRps);
+                Console.Out.WriteLine(
+                    $"AutoTune: stopping (no improvement). Best was {bestRps:F1} rps @ {bestClients} clients.");
+                break;
+            }
+
+            if (Settings.Vu >= tune.MaxClients)
+            {
+                _autoTuneResult = (bestClients, bestRps);
+                Console.Out.WriteLine(
+                    $"AutoTune: reached max clients ({tune.MaxClients}). Best was {bestRps:F1} rps @ {bestClients} clients.");
+                break;
+            }
+
+            var toAdd = Math.Min(tune.Step, tune.MaxClients - Settings.Vu);
+            AddClients(toAdd);
+        }
+
+        _autoTuneResult ??= (bestClients, bestRps);
     }
 
     private void PrepareRequestQueue()
@@ -332,9 +466,13 @@ internal class Manager : IDisposable
         ref float accumulatedLatency)
     {
         GetProgress.Requests += accumulatedRequests;
-        GetProgress.ErrorRatio = (float)accumulatedErrors / GetProgress.Requests;
+        GetProgress.ErrorRatio = GetProgress.Requests > 0
+            ? (float)accumulatedErrors / GetProgress.Requests
+            : 0f;
         GetProgress.Rps = accumulatedRequests;
-        GetProgress.MeanLatency = accumulatedLatency / accumulatedRequests;
+        GetProgress.MeanLatency = accumulatedRequests > 0
+            ? accumulatedLatency / accumulatedRequests
+            : 0f;
         // TODO: needs to change to handle <duration>
         GetProgress.PercentDone = Settings.MaxRequests > 0
             ? (int)(_responseData.Count / (float)Settings.MaxRequests * 100)
@@ -353,6 +491,15 @@ internal class Manager : IDisposable
 
         _responseData.Clear();
         TotalTimeTimer.Start();
+
+        Task? autoTuneTask = null;
+        if (Settings.AutoTune != null)
+        {
+            Console.Out.WriteLine(
+                $"AutoTune enabled: maxClients={Settings.AutoTune.MaxClients}, step={Settings.AutoTune.Step}, interval={Settings.AutoTune.Interval}, maxErr={Settings.AutoTune.MaxErrorRatio:P1}");
+            autoTuneTask = Task.Run(() => RunAutoTuneAsync(Settings.AutoTune));
+        }
+
         var timer = Stopwatch.StartNew();
         var accumulatedErrors = 0;
         var accumulatedMeanLatency = 0f;
@@ -400,6 +547,18 @@ internal class Manager : IDisposable
 
         Done.Set();
         TotalTimeTimer.Stop();
+
+        if (autoTuneTask != null)
+        {
+            try
+            {
+                autoTuneTask.Wait(TimeSpan.FromSeconds(1));
+            }
+            catch
+            {
+                // ignore
+            }
+        }
     }
 
     private static bool IsError(DataPoint dataPoint) =>
@@ -418,11 +577,23 @@ internal class Manager : IDisposable
 
         accumulatedRequests += results.Count;
 
+        if (results.Count > 0)
+            Interlocked.Add(ref _totalRequests, results.Count);
+
+        var intervalErrors = 0;
+
         foreach (var data in results)
         {
             _responseData.Add(data);
-            accumulatedErrors += IsError(data) ? 1 : 0;
+            if (IsError(data))
+            {
+                accumulatedErrors++;
+                intervalErrors++;
+            }
         }
+
+        if (intervalErrors > 0)
+            Interlocked.Add(ref _totalErrors, intervalErrors);
 
         accumulatedMeanLatency += (float)results.Where(x => !IsError(x))
             .Sum(x => x.ResponseTime.TotalMilliseconds);

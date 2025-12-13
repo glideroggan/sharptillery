@@ -36,6 +36,7 @@ public class Config
 {
     public string? Target { get; set; }
     public string? Report { get; set; }
+    public int? RequestTimeoutSeconds { get; set; }
     public List<Phase>? Phases { get; set; }
 }
 
