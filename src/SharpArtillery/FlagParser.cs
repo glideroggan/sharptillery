@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using SharpArtillery.Configs;
 using SharpArtillery.YamlConfig;
 
@@ -15,7 +14,7 @@ namespace SharpArtillery
         {
             // read arguments
             var parser = new FlagParser<ArtilleryConfig>()
-                .AddFlag('v', (val, c) => 
+                .AddFlagNoValue('v', (val, c) => 
                 {
                     c.ShowInfo = true;
                 })
@@ -98,7 +97,8 @@ Flags:
     }
     public class FlagParser<T> where T : class, new()
     {
-        private readonly Dictionary<char, (Action<string, T> Callback, char[]? Exclusivness)> _flags = new();
+        private readonly Dictionary<char, (Action<string?, T> Callback, char[]? Exclusivness, bool RequiresValue)>
+            _flags = new();
 
         /// <summary>
         /// Parse the incoming arguments and evaluate the flags
@@ -115,35 +115,58 @@ Flags:
 
             // PERF: we could do the exclusive flags with actual flags 00000 | 001000
 
+            if (args == null || args.Length == 0) return callback();
+
             var res = new T();
-            var arguments = string.Join(" ", args);
-            var usedFlags = new List<KeyValuePair<char, (Action<string, T> Callback, char[]? Exclusivness)>>();
-            foreach (var flag in _flags)
+            var usedFlags = new HashSet<char>();
+
+            for (var i = 0; i < args.Length; i++)
             {
-                var regStr = $"-{flag.Key}\\s([^\\s]*)";
-                var targetRegex = new Regex(regStr, RegexOptions.ECMAScript | RegexOptions.IgnoreCase);
-                var matches = targetRegex.Matches(arguments);
-                foreach (Match match in matches)
+                var token = args[i];
+                if (string.IsNullOrWhiteSpace(token))
+                    continue;
+
+                if (!token.StartsWith("-", StringComparison.Ordinal) || token.Length != 2)
+                    continue;
+
+                var flagChar = token[1];
+                if (!_flags.TryGetValue(flagChar, out var flagDef))
+                    throw new ArgumentException($"Unknown flag: -{flagChar}");
+
+                usedFlags.Add(flagChar);
+
+                if (!flagDef.RequiresValue)
                 {
-                    if (!match.Success) continue;
-                    
-                    usedFlags.Add(flag);
-                    flag.Value.Callback(match.Groups[1].Value, res);    
+                    flagDef.Callback(null, res);
+                    continue;
                 }
+
+                if (i + 1 >= args.Length)
+                    throw new ArgumentException($"Flag -{flagChar} requires a value");
+
+                var value = args[i + 1];
+                if (string.IsNullOrWhiteSpace(value))
+                    throw new ArgumentException($"Flag -{flagChar} requires a value");
+
+                // If the next token looks like another flag, treat it as missing value.
+                if (value.Length == 2 && value.StartsWith("-", StringComparison.Ordinal) && _flags.ContainsKey(value[1]))
+                    throw new ArgumentException($"Flag -{flagChar} requires a value");
+
+                flagDef.Callback(value, res);
+                i++; // consume value
             }
 
             if (usedFlags.Count == 0) return callback();
 
             // check exclusiveness
-            foreach (var flag in usedFlags)
+            foreach (var flagChar in usedFlags)
             {
-                if (flag.Value.Exclusivness == null) continue;
-                foreach (var exclusiveFlag in flag.Value.Exclusivness)
+                var def = _flags[flagChar];
+                if (def.Exclusivness == null) continue;
+                foreach (var exclusiveFlag in def.Exclusivness)
                 {
-                    if (usedFlags.All(f => f.Key != exclusiveFlag)) continue;
-                    var foundExclusive = usedFlags.FirstOrDefault(f => f.Key == exclusiveFlag);
-                    throw new ArgumentException(
-                        $"Not allowed flag combination: {foundExclusive.Key} <> {flag.Key}");
+                    if (!usedFlags.Contains(exclusiveFlag)) continue;
+                    throw new ArgumentException($"Not allowed flag combination: {exclusiveFlag} <> {flagChar}");
                 }
             }
 
@@ -153,7 +176,13 @@ Flags:
 
         public FlagParser<T> AddFlag(char flag, Action<string?, T> callback, params char[]? exclusives)
         {
-            _flags.Add(flag, (callback, exclusives));
+            _flags.Add(flag, (callback, exclusives, true));
+            return this;
+        }
+
+        public FlagParser<T> AddFlagNoValue(char flag, Action<string?, T> callback, params char[]? exclusives)
+        {
+            _flags.Add(flag, (callback, exclusives, false));
             return this;
         }
         // public FlagParser<T> AddFlag(char flag, Action<string?, T> callback)

@@ -25,7 +25,17 @@ public class MainService
 
     public async Task Main(string[] args)
     {
-        var flags = ProgramSettings.HandleConfigsAndSettings(args);
+        ArtilleryConfig flags;
+        try
+        {
+            flags = ProgramSettings.HandleConfigsAndSettings(args);
+        }
+        catch (ArgumentException e)
+        {
+            Console.Error.WriteLine($"Error: {e.Message}");
+            Environment.ExitCode = 2;
+            return;
+        }
 
         if (flags.Quit) return;
 

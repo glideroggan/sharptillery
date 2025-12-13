@@ -18,7 +18,6 @@ internal interface ICustomHttpClientFactory
 internal class Client
 {
     private readonly Manager _manager;
-    private readonly CancellationToken _managerClientKillToken;
     private readonly ICustomHttpClientFactory _httpClientFactory;
     private readonly ILogger<Client> _logger;
 
@@ -26,18 +25,17 @@ internal class Client
     {
         _manager = manager;
         _logger = loggerFactory.CreateLogger<Client>();
-        _managerClientKillToken = manager.ClientKillToken;
         _httpClientFactory = httpClientFactory;
     }
 
-    public async void Run()
+    public async Task RunAsync(CancellationToken cancellationToken)
     {
         try
         {
             _manager.StartClients.WaitOne();
             // TODO: should set in a more global kill switch here, so that if cancellation is requested, but
             // we failed on dequeue, then we will want to try to dequeue again
-            while (!_managerClientKillToken.IsCancellationRequested)
+            while (!cancellationToken.IsCancellationRequested)
             {
                 if (_manager.RequestMessageQueue.IsEmpty) break;
                 if (!_manager.RequestMessageQueue.TryDequeue(out var req))
@@ -49,11 +47,13 @@ internal class Client
                 };
                 try
                 {
-                    var c = new CancellationTokenSource();
+                    using var c = new CancellationTokenSource();
                     var httpClient = _httpClientFactory.CreateClient();
                     c.CancelAfter(TimeSpan.FromSeconds(5));
 
-                    var res = await httpClient.SendAsync(req, c.Token);
+                    using var res = await httpClient
+                        .SendAsync(req, HttpCompletionOption.ResponseHeadersRead, c.Token)
+                        .ConfigureAwait(false);
                     requestResults.Status = res.StatusCode;
                 }
                 catch (AggregateException e)
@@ -66,6 +66,10 @@ internal class Client
                     requestResults.Status = HttpStatusCode.InternalServerError;
                     requestResults.Error = e.Message;
                 }
+                finally
+                {
+                    req.Dispose();
+                }
 
                 requestResults.RequestReceivedTime = DateTime.UtcNow;
                 requestResults.EndTime = DateTime.UtcNow;
@@ -75,13 +79,17 @@ internal class Client
                 _manager.ResponseMessageQueue.Enqueue(requestResults); 
             }
             // sleep before killing thread to just let everything cool
-            await Task.Delay(1000);
+            await Task.Delay(1000, cancellationToken);
             Debug.Assert(!_manager.Settings.Duration.HasValue &&
                          _manager.RequestMessageQueue.IsEmpty);
         }
         catch (AggregateException ae)
         {
             _logger.LogError("Client error: {Message}", ae.Message);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected during shutdown.
         }
         catch (Exception e)
         {

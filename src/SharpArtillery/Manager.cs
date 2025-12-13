@@ -51,6 +51,7 @@ internal class Manager : IDisposable
     private readonly ICustomHttpClientFactory _httpClientFactory;
 
     private readonly List<Client> _clients = new();
+    private readonly List<Task> _clientTasks = new();
     public readonly ConcurrentQueue<HttpRequestMessage> RequestMessageQueue = new();
     public readonly ConcurrentQueue<DataPoint> ResponseMessageQueue = new();
 
@@ -241,15 +242,13 @@ internal class Manager : IDisposable
         Settings = settings;
         // reset progress
         GetProgress = new();
-        // TODO: continue here, we're clearing clients here, but maybe we should check first....
+        // recreate clients per run so they bind to the current cancellation token
         Console.Out.WriteLine("Preparing clients...");
-        // create clients
         Clientcts = new CancellationTokenSource();
-        while (_clients.Count < settings.Vu)
-        {
-            var c = new Client(this, _httpClientFactory, _loggerFactory);
-            _clients.Add(c);
-        }
+        _clients.Clear();
+        _clientTasks.Clear();
+        for (var i = 0; i < settings.Vu; i++)
+            _clients.Add(new Client(this, _httpClientFactory, _loggerFactory));
 
         // TODO: not implemented yet into the flow
         if (settings.ConstantRps > 0)
@@ -275,8 +274,7 @@ internal class Manager : IDisposable
         Console.Out.WriteLine("Activating clients...");
         foreach (var client in _clients)
         {
-            var clientThread = new Thread(client.Run) { IsBackground = true };
-            clientThread.Start();
+            _clientTasks.Add(Task.Run(() => client.RunAsync(ClientKillToken), ClientKillToken));
         }
 
         return new ValueTask(Task.CompletedTask);
@@ -404,7 +402,8 @@ internal class Manager : IDisposable
         TotalTimeTimer.Stop();
     }
 
-    private static bool IsError(DataPoint dataPoint) => (int)dataPoint.Status <= 200 && (int)dataPoint.Status >= 300;
+    private static bool IsError(DataPoint dataPoint) =>
+        !string.IsNullOrEmpty(dataPoint.Error) || (int)dataPoint.Status < 200 || (int)dataPoint.Status >= 300;
 
     private void DequeueAndAccumulate(ref int accumulatedRequests, ref int accumulatedErrors,
         ref float accumulatedMeanLatency)
