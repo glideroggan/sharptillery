@@ -1,68 +1,35 @@
-﻿using System;
+using System;
 using System.Net.Http;
-using System.Net.Security;
 using System.Threading;
 using SharpArtillery.Configs;
 
 namespace SharpArtillery;
 
-internal enum FactoryEnum
-{
-    Microsoft, Roger
-}
 internal sealed class CustomHttpClientFactory : ICustomHttpClientFactory, IDisposable
 {
-    private readonly IHttpClientFactory? _httpClientFactory;
-    private readonly FactoryEnum _factory;
-    private HttpClient? _con;
+    private readonly HttpClient _client;
 
-    public CustomHttpClientFactory(IHttpClientFactory? httpClientFactory, FactoryEnum factory,
-        ArtilleryConfig settings)
+    public CustomHttpClientFactory(ArtilleryConfig settings)
     {
-        _httpClientFactory = httpClientFactory;
-        _factory = factory;
-        switch (_factory)
+        var socketHandler = new SocketsHttpHandler
         {
-            case FactoryEnum.Microsoft:
-                break;
-            case FactoryEnum.Roger:
-                var socketHandler = new SocketsHttpHandler
-                {
-                    PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
-                    PooledConnectionLifetime = Timeout.InfiniteTimeSpan,
-                    // TODO: maybe should scale with the number of concurrent clients?
-                    MaxConnectionsPerServer = 200,
-                };
-                
-                _con = new HttpClient(socketHandler, true);
-                foreach (var (name, val) in settings.Headers)
-                {
-                    _con.DefaultRequestHeaders.Add(name, val);
-                }
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(factory), factory, "Unknown HTTP client factory");
-        }
-        
-    }
+            PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
+            PooledConnectionLifetime = Timeout.InfiniteTimeSpan,
+            // TODO: maybe should scale with the number of concurrent clients?
+            MaxConnectionsPerServer = 200,
+        };
 
-    public HttpClient CreateClient()
-    {
-        switch (_factory)
+        _client = new HttpClient(socketHandler, true);
+        foreach (var (name, val) in settings.Headers)
         {
-            case FactoryEnum.Microsoft:
-                _con = _httpClientFactory!.CreateClient("TestTarget");
-                _con.DefaultRequestHeaders.ConnectionClose = false;
-                return _con;
-            case FactoryEnum.Roger:
-                return _con!;
-            default:
-                throw new InvalidOperationException($"Unknown HTTP client factory: {_factory}");
+            _client.DefaultRequestHeaders.Add(name, val);
         }
     }
+
+    public HttpClient CreateClient() => _client;
 
     public void Dispose()
     {
-        _con?.Dispose();
+        _client.Dispose();
     }
 }

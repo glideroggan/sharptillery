@@ -44,7 +44,7 @@ internal sealed class Manager : IDisposable
     public readonly ConcurrentQueue<HttpRequestMessage> RequestMessageQueue = new();
     public readonly ConcurrentQueue<DataPoint> ResponseMessageQueue = new();
 
-    private ManualResetEvent Done = new(false);
+    private ManualResetEvent _done = new(false);
 
     public Manager(ICustomHttpClientFactory customHttpClientFactory, ILoggerFactory loggerFactory)
     {
@@ -95,7 +95,7 @@ internal sealed class Manager : IDisposable
             _responseData[right] = point;
         }
 
-        Done.WaitOne();
+        _done.WaitOne();
     }
 
     public volatile Progress GetProgress = new();
@@ -401,7 +401,7 @@ internal sealed class Manager : IDisposable
 
         _averageRps = (int)(GetProgress.Requests / TotalTimeTimer.Elapsed.TotalSeconds);
 
-        Done.Set();
+        _done.Set();
         TotalTimeTimer.Stop();
 
         if (autoTuneTask != null)

@@ -4,6 +4,7 @@ Last updated: 2025-01-10
 
 ## Recent Changes
 
+- **2025-01-10**: SIMP-002, BUG-004, BUG-005 completed — Removed dead code (FactoryEnum.Microsoft, unused fields), fixed stale pragma, renamed Done→_done.
 - **2025-01-10**: AP-005 completed — Centralized settings validation in `Settings.Validate()`. Replaced duplicate validation in MainService and Manager with single method call.
 - **2025-01-10**: SIMP-003 completed — Extracted `Percentile()` to `StatsUtils.cs`. Unified two different algorithms (Round vs Ceiling-1) to single consistent implementation.
 - **2025-01-10**: SIMP-004 completed — Extracted `IsError()` to `DataPoint` instance method. Removed duplicate static methods from ConsoleReporter and HtmlReport.
@@ -50,19 +51,19 @@ This document tracks issues found during code review and their resolution status
 - **Impact**: Minor timing inaccuracy.
 - **Action**: [ ] Pending discussion
 
-### BUG-004: Stale pragma warning disable
-- **Location**: `MainService.cs:1`
+### BUG-004: Stale pragma warning disable ✅ COMPLETED
+- **Location**: ~~`MainService.cs:1`~~
 - **Severity**: Low
-- **Description**: `#pragma warning disable CA1848` at file level, never restored.
-- **Impact**: Suppresses warnings project-wide in this file.
-- **Action**: [ ] Pending discussion
+- **Description**: ~~`#pragma warning disable CA1848` at file level, never restored.~~
+- **Resolution**: Removed stale pragma and unused `_logger` field from MainService.
+- **Action**: [x] Completed 2025-01-10
 
-### BUG-005: ManualResetEvent field naming
-- **Location**: `Manager.cs:62`
+### BUG-005: ManualResetEvent field naming ✅ COMPLETED
+- **Location**: ~~`Manager.cs:62`~~ (renamed)
 - **Severity**: Low
-- **Description**: `Done` is a private field but uses PascalCase instead of `_done`.
-- **Impact**: Inconsistent with C# conventions.
-- **Action**: [ ] Pending discussion
+- **Description**: ~~`Done` is a private field but uses PascalCase instead of `_done`.~~
+- **Resolution**: Renamed `Done` → `_done` to follow C# conventions.
+- **Action**: [x] Completed 2025-01-10
 
 ---
 
@@ -148,11 +149,17 @@ This document tracks issues found during code review and their resolution status
   - Deleted `FlagParser.cs` (227 lines of custom code removed)
 - **Action**: [x] Completed 2025-01-10
 
-### SIMP-002: Unused FactoryEnum.Microsoft
-- **Location**: `CustomHttpClientFactory.cs`
+### SIMP-002: Unused FactoryEnum.Microsoft ✅ COMPLETED
+- **Location**: ~~`CustomHttpClientFactory.cs`~~ (simplified)
 - **Severity**: Low
-- **Description**: `FactoryEnum.Microsoft` path exists but is never used. Dead code.
-- **Action**: [ ] Pending discussion
+- **Description**: ~~`FactoryEnum.Microsoft` path exists but is never used. Dead code.~~
+- **Resolution**:
+  - Removed `FactoryEnum` enum entirely (only `Roger` was ever used)
+  - Removed unused `_httpClientFactory` field
+  - Removed unused `System.Net.Security` import
+  - Simplified constructor to single code path
+  - Factory reduced from 68 to 36 lines
+- **Action**: [x] Completed 2025-01-10
 
 ### SIMP-003: Percentile calculation duplicated ✅ COMPLETED
 - **Location**: ~~`ConsoleReporter.cs:132-138`, `HtmlReport.cs:169-176`~~ → `StatsUtils.Percentile()`
@@ -239,9 +246,9 @@ This document tracks issues found during code review and their resolution status
 |----------|-------|
 | **P0 - Fix Now** | (none) |
 | **P1 - Fix Soon** | (none) |
-| **P2 - Nice to Have** | AP-002, AP-004, AP-006, AP-007, SIMP-002 |
-| **P3 - Cleanup** | BUG-001, BUG-002, BUG-003, BUG-004, BUG-005, SIMP-006, DEAD-002, DEAD-003, DEAD-004 |
-| **Completed** | SIMP-001, DEAD-001, SIMP-005, AP-001, AP-003, SIMP-004, SIMP-003, AP-005 |
+| **P2 - Nice to Have** | AP-002, AP-004, AP-006, AP-007 |
+| **P3 - Cleanup** | BUG-001, BUG-002, BUG-003, SIMP-006, DEAD-002, DEAD-003, DEAD-004 |
+| **Completed** | SIMP-001, DEAD-001, SIMP-005, AP-001, AP-003, SIMP-004, SIMP-003, AP-005, SIMP-002, BUG-004, BUG-005 |
 
 ---
 

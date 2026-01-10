@@ -1,4 +1,3 @@
-#pragma warning disable CA1848
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -15,12 +14,10 @@ namespace SharpArtillery;
 public sealed class MainService
 {
     private readonly ILoggerFactory _loggerFactory;
-    private readonly ILogger<MainService> _logger;
 
     public MainService(ILoggerFactory loggerFactory)
     {
         _loggerFactory = loggerFactory;
-        _logger = loggerFactory.CreateLogger<MainService>();
     }
 
     /// <summary>
@@ -28,7 +25,7 @@ public sealed class MainService
     /// </summary>
     public async Task Run(ArtilleryConfig flags)
     {
-        var httpClientFactory = new CustomHttpClientFactory(null, FactoryEnum.Roger, flags);
+        var httpClientFactory = new CustomHttpClientFactory(flags);
 
         Settings? settings;
         var manager = new Manager(httpClientFactory, _loggerFactory);
