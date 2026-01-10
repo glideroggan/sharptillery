@@ -61,7 +61,7 @@ internal sealed class ConsoleReporter
             Console.Out.WriteLine($"{status.StatusCode} : {status.Count}");
         }
 
-        var errors = _responseData.Count(IsError);
+        var errors = _responseData.Count(d => d.IsError());
         Console.Out.WriteLine($"Errors: {errors}");
         var firstError = _responseData.FirstOrDefault(x => !string.IsNullOrEmpty(x.Error));
         var firstErrorText = string.IsNullOrEmpty(firstError.Error) ? null : firstError.Error;
@@ -73,8 +73,8 @@ internal sealed class ConsoleReporter
     /// </summary>
     public void PrintPercentiles()
     {
-        var okRequests = _responseData.Where(x => !IsError(x)).ToList();
-        var errorRequests = _responseData.Where(IsError).ToList();
+        var okRequests = _responseData.Where(x => !x.IsError()).ToList();
+        var errorRequests = _responseData.Where(x => x.IsError()).ToList();
 
         Console.Out.WriteLine(
             string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Target URL:", _settings.Target));
@@ -129,18 +129,11 @@ internal sealed class ConsoleReporter
             string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "100%", $"{latencies[^1]:F} ms"));
     }
 
-    private static void PrintPercentile(List<double> sortedLatencies, float percent, string label)
+    private static void PrintPercentile(List<double> sortedLatencies, double percent, string label)
     {
-        var index = (int)MathF.Round(percent * sortedLatencies.Count);
-        if (index >= sortedLatencies.Count)
-            index = sortedLatencies.Count - 1;
+        var value = StatsUtils.Percentile(sortedLatencies, percent);
         Console.Out.WriteLine(
-            string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", label, $"{sortedLatencies[index]:F} ms"));
+            string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", label, $"{value:F} ms"));
     }
 
-    /// <summary>
-    /// Determines if a data point represents an error response.
-    /// </summary>
-    internal static bool IsError(DataPoint dataPoint) =>
-        !string.IsNullOrEmpty(dataPoint.Error) || (int)dataPoint.Status < 200 || (int)dataPoint.Status >= 300;
 }

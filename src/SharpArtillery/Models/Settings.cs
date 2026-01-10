@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace SharpArtillery.Configs;
@@ -18,6 +18,25 @@ internal sealed class Settings
     public string? Method { get; init; }
     public Dictionary<string,string>? Headers { get; set; }
     public object? JsonContent { get; set; }
+
+    /// <summary>
+    /// Validates that settings are consistent.
+    /// Throws ArgumentException if validation fails.
+    /// </summary>
+    /// <param name="context">Optional context for error messages (e.g., phase name).</param>
+    public void Validate(string? context = null)
+    {
+        var prefix = string.IsNullOrEmpty(context) ? "" : $"{context}: ";
+
+        if (Vu < 1)
+            throw new ArgumentException($"{prefix}Concurrency level must be at least 1.");
+
+        if (Duration == null && MaxRequests == null)
+            throw new ArgumentException($"{prefix}Must specify either duration or max requests.");
+
+        if (Duration != null && MaxRequests != null)
+            throw new ArgumentException($"{prefix}Duration and max requests are mutually exclusive.");
+    }
 }
 
 internal sealed record AutoTuneSettings(

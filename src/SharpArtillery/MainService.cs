@@ -54,22 +54,13 @@ public sealed class MainService
 
             foreach (var phase in phases)
             {
-                settings = new Settings
-                {
-                    Vu = phase.Vu,
-                    Duration = phase.Duration.HasValue ? TimeSpan.FromSeconds(phase.Duration.Value) : null,
-                    Target = endpoint,
-                    MaxRequests = phase.Requests > 0 ? phase.Requests : null,
-                    RequestTimeout = config.Settings.RequestTimeoutSeconds.HasValue
-                        ? TimeSpan.FromSeconds(config.Settings.RequestTimeoutSeconds.Value)
-                        : null
-                };
+                settings = flags.ToSettings(
+                    targetOverride: endpoint,
+                    vuOverride: phase.Vu,
+                    durationOverride: phase.Duration.HasValue ? TimeSpan.FromSeconds(phase.Duration.Value) : null,
+                    maxRequestsOverride: phase.Requests > 0 ? phase.Requests : null);
 
-                if (settings.Duration == null && settings.MaxRequests == null)
-                    throw new InvalidOperationException($"Phase '{phase.Name ?? "(unnamed)"}' must specify either duration or requests.");
-
-                if (settings.Duration != null && settings.MaxRequests != null)
-                    throw new InvalidOperationException($"Phase '{phase.Name ?? "(unnamed)"}' cannot specify both duration and requests.");
+                settings.Validate($"Phase '{phase.Name ?? "(unnamed)"}'");
 
                 await RunPhaseTest(manager, settings);
             }
@@ -82,27 +73,7 @@ public sealed class MainService
             // Non-YAML mode - config already validated by CommandLineParser
             var target = flags.Target!;
 
-            settings = new Settings
-            {
-                JsonContent = flags.JsonContent,
-                Vu = flags.Clients,
-                Target = target,
-                Method = flags.Method,
-                Duration = flags.Duration,
-                MaxRequests = flags.MaxRequests,
-                Headers = flags.Headers,
-                ConstantRps = flags.ConstantRps,
-                RequestTimeout = flags.RequestTimeout,
-                AutoTune = flags.AutoTuneMaxRps
-                    ? new AutoTuneSettings(
-                        MaxClients: flags.AutoTuneMaxClients ?? 256,
-                        Step: flags.AutoTuneStep ?? 5,
-                        Interval: flags.AutoTuneInterval ?? TimeSpan.FromSeconds(5),
-                        MaxErrorRatio: flags.AutoTuneMaxErrorRatio ?? 0.02f,
-                        MinImprovementRatio: 0.01f,
-                        MaxStallIntervals: 3)
-                    : null
-            };
+            settings = flags.ToSettings(target);
             await RunNonPhaseTest(manager, settings);
 
             if (flags.ReportSettings.Enabled)

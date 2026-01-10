@@ -114,8 +114,7 @@ internal sealed class Manager : IDisposable
     public ValueTask PrepareForTest(Settings settings)
     {
         Settings = settings;
-        if (Settings.Vu < 1)
-            throw new ArgumentException("Concurrency level must be at least 1 (-c <number>). ");
+        Settings.Validate();
         _autoTuneResult = null;
         Interlocked.Exchange(ref _totalRequests, 0);
         Interlocked.Exchange(ref _totalErrors, 0);
@@ -135,13 +134,6 @@ internal sealed class Manager : IDisposable
             Console.Out.WriteLine($"Rate limiting: {settings.ConstantRps} RPS across {settings.Vu} clients ({rpsPerClient:F1} RPS/client)");
         }
 
-        if (settings.Duration == null && settings.MaxRequests == null)
-            throw new ArgumentException("You must specify either duration (-d HH:MM:SS) or max requests (-n <number>). ");
-
-        if (settings.Duration != null && settings.MaxRequests != null)
-            throw new ArgumentException("Duration (-d) and max requests (-n) are mutually exclusive.");
-        // if (settings.Duration != null && settings.MaxRequests > 0)
-        //     throw new ArgumentException("You can't have flag duration and requests at the same time");
         // configure the request queue settings
         _topupSettings = new TopupSettings(2000, 4000 * Settings.Vu, 4000);
 
@@ -446,7 +438,7 @@ internal sealed class Manager : IDisposable
         foreach (var data in results)
         {
             _responseData.Add(data);
-            if (ConsoleReporter.IsError(data))
+            if (data.IsError())
             {
                 accumulatedErrors++;
                 intervalErrors++;
@@ -456,7 +448,7 @@ internal sealed class Manager : IDisposable
         if (intervalErrors > 0)
             Interlocked.Add(ref _totalErrors, intervalErrors);
 
-        accumulatedMeanLatency += (float)results.Where(x => !ConsoleReporter.IsError(x))
+        accumulatedMeanLatency += (float)results.Where(x => !x.IsError())
             .Sum(x => x.ResponseTime.TotalMilliseconds);
     }
 }

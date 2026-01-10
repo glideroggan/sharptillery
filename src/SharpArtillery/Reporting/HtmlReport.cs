@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -63,11 +63,6 @@ internal static class HtmlReport
         Console.Out.WriteLine("Report saved");
     }
 
-    [RequiresUnreferencedCode(
-        "Calls System.Text.Json.JsonSerializer.Serialize<System.Collections.Generic.IEnumerable<<anonymous type: int Time, System.TimeSpan Latency, int RequestRate, string Phase>>>(System.Collections.Generic.IEnumerable<<anonymous type: int Time, System.TimeSpan Latency, int RequestRate, string Phase>>, System.Text.Json.JsonSerializerOptions?)")]
-    private static bool IsError(DataPoint dataPoint) =>
-        !string.IsNullOrEmpty(dataPoint.Error) || (int)dataPoint.Status < 200 || (int)dataPoint.Status >= 300;
-
     private static string PrepareTimeSeriesData(List<DataPoint> requestData)
     {
         // Bucket by whole second.
@@ -77,8 +72,8 @@ internal static class HtmlReport
             .Select(g =>
             {
                 var total = g.Count();
-                var errors = g.Count(IsError);
-                var okLatencies = g.Where(d => !IsError(d)).Select(d => d.ResponseTime.TotalMilliseconds).ToList();
+                var errors = g.Count(d => d.IsError());
+                var okLatencies = g.Where(d => !d.IsError()).Select(d => d.ResponseTime.TotalMilliseconds).ToList();
                 var meanLatency = okLatencies.Count > 0 ? okLatencies.Average() : 0d;
 
                 var phaseName = g.Select(d => d.PhaseName).FirstOrDefault(p => !string.IsNullOrWhiteSpace(p))
@@ -100,7 +95,7 @@ internal static class HtmlReport
     private static string PrepareSummaryData(List<DataPoint> requestData, string url)
     {
         var total = requestData.Count;
-        var errors = requestData.Count(IsError);
+        var errors = requestData.Count(d => d.IsError());
         var ok = total - errors;
 
         var responded = requestData.Where(d => d.HasResponse).ToList();
@@ -123,7 +118,7 @@ internal static class HtmlReport
 
         static string? GetErrorKey(DataPoint d)
         {
-            if (!IsError(d)) return null;
+            if (!d.IsError()) return null;
             if (d.IsTimeout) return "timeout";
 
             if (!string.IsNullOrWhiteSpace(d.ErrorType))
@@ -160,7 +155,7 @@ internal static class HtmlReport
         var timeouts = requestData.Count(d => d.IsTimeout);
 
         var okKnownLengths = requestData
-            .Where(d => d.HasResponse && !IsError(d) && d.ResponseContentLengthBytes.HasValue)
+            .Where(d => d.HasResponse && !d.IsError() && d.ResponseContentLengthBytes.HasValue)
             .Select(d => (double)d.ResponseContentLengthBytes!.Value)
             .ToList();
         okKnownLengths.Sort();
@@ -168,17 +163,8 @@ internal static class HtmlReport
         var meanResponseLengthBytes = knownResponseLengthCount > 0 ? okKnownLengths.Average() : 0d;
         var maxResponseLengthBytes = knownResponseLengthCount > 0 ? okKnownLengths[^1] : 0d;
 
-        var okLatencies = requestData.Where(d => !IsError(d)).Select(d => d.ResponseTime.TotalMilliseconds).ToList();
+        var okLatencies = requestData.Where(d => !d.IsError()).Select(d => d.ResponseTime.TotalMilliseconds).ToList();
         okLatencies.Sort();
-
-        static double Percentile(List<double> sorted, double p)
-        {
-            if (sorted.Count == 0) return 0;
-            var idx = (int)Math.Ceiling(p * sorted.Count) - 1;
-            if (idx < 0) idx = 0;
-            if (idx >= sorted.Count) idx = sorted.Count - 1;
-            return sorted[idx];
-        }
 
         var durationSeconds = requestData.Count == 0
             ? 0d
@@ -211,10 +197,10 @@ internal static class HtmlReport
             AverageRps = averageRps,
             MeanLatencyMs = meanLatency,
             MaxLatencyMs = maxLatency,
-            P50LatencyMs = Percentile(okLatencies, 0.50),
-            P90LatencyMs = Percentile(okLatencies, 0.90),
-            P95LatencyMs = Percentile(okLatencies, 0.95),
-            P99LatencyMs = Percentile(okLatencies, 0.99)
+            P50LatencyMs = StatsUtils.Percentile(okLatencies, 0.50),
+            P90LatencyMs = StatsUtils.Percentile(okLatencies, 0.90),
+            P95LatencyMs = StatsUtils.Percentile(okLatencies, 0.95),
+            P99LatencyMs = StatsUtils.Percentile(okLatencies, 0.99)
         };
 
         return JsonSerializer.Serialize(summary, Options);

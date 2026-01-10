@@ -4,6 +4,10 @@ Last updated: 2025-01-10
 
 ## Recent Changes
 
+- **2025-01-10**: AP-005 completed — Centralized settings validation in `Settings.Validate()`. Replaced duplicate validation in MainService and Manager with single method call.
+- **2025-01-10**: SIMP-003 completed — Extracted `Percentile()` to `StatsUtils.cs`. Unified two different algorithms (Round vs Ceiling-1) to single consistent implementation.
+- **2025-01-10**: SIMP-004 completed — Extracted `IsError()` to `DataPoint` instance method. Removed duplicate static methods from ConsoleReporter and HtmlReport.
+- **2025-01-10**: AP-003 completed — Unified settings mapping with `ToSettings()` method. Replaced 30 lines of inline mapping in MainService with single method calls.
 - **2025-01-10**: AP-001 partial — Extracted `ConsoleReporter.cs` from Manager. Reduced Manager from 582 to 486 lines.
 - **2025-01-10**: SIMP-005 completed — Replaced O(n²) RPS calculation with O(n) sliding window algorithm. Processing 10k requests now instant.
 - **2025-01-10**: DEAD-001 completed — Implemented smooth per-client rate limiting (`-r`/`--rps`). Each client paces independently with staggered start and ±20% jitter for realistic load distribution.
@@ -83,12 +87,17 @@ This document tracks issues found during code review and their resolution status
 - **Impact**: Less composable, harder to await properly.
 - **Action**: [ ] Pending discussion
 
-### AP-003: Settings duplication
+### AP-003: Settings duplication ✅ COMPLETED
 - **Location**: `ArtilleryConfig.cs` vs `Settings.cs`
 - **Severity**: Medium
-- **Description**: Two nearly identical config classes. `MainService` manually maps between them.
-- **Suggested Fix**: Unify into a single source of truth.
-- **Action**: [ ] Pending discussion
+- **Description**: ~~Two nearly identical config classes. `MainService` manually maps between them.~~
+- **Resolution**:
+  - Added `ToSettings()` method to `ArtilleryConfig` with optional overrides for YAML phases
+  - Renamed `Clients` → `Vu` in ArtilleryConfig for consistency with Settings
+  - Changed `ConstantRps` from `int` to `int?` for proper nullability
+  - Replaced 20 lines of inline mapping in MainService with single `flags.ToSettings()` calls
+  - YAML phases use override parameters: `flags.ToSettings(targetOverride: ..., vuOverride: ...)`
+- **Action**: [x] Completed 2025-01-10
 
 ### AP-004: Mixing concerns in MainService.Main()
 - **Location**: `MainService.cs:26-146`
@@ -97,12 +106,17 @@ This document tracks issues found during code review and their resolution status
 - **Suggested Fix**: Extract into smaller focused methods or classes.
 - **Action**: [ ] Pending discussion
 
-### AP-005: Repeated validation logic
-- **Location**: `MainService.cs:86-90, 109-110`, `Manager.cs:276-280`
+### AP-005: Repeated validation logic ✅ COMPLETED
+- **Location**: ~~`MainService.cs:63-67`, `Manager.cs:117-119, 138-142`~~ → `Settings.Validate()`
 - **Severity**: Low
-- **Description**: Duration/MaxRequests mutual exclusivity checked in 3 places.
-- **Suggested Fix**: Centralize validation in one place.
-- **Action**: [ ] Pending discussion
+- **Description**: ~~Duration/MaxRequests mutual exclusivity and VU validation checked in multiple places with different exception types and messages.~~
+- **Resolution**:
+  - Added `Validate(string? context = null)` method to `Settings` class
+  - Validates: VU >= 1, exactly one of Duration/MaxRequests specified
+  - Optional context parameter for phase-specific error messages
+  - Updated MainService to use `settings.Validate($"Phase '{phase.Name ?? "(unnamed)"}'")` for YAML phases
+  - Updated Manager.PrepareForTest to use `Settings.Validate()` for non-YAML runs
+- **Action**: [x] Completed 2025-01-10
 
 ### AP-006: Console output scattered everywhere
 - **Location**: `Manager.cs`, `MainService.cs`, `Client.cs`
@@ -140,19 +154,27 @@ This document tracks issues found during code review and their resolution status
 - **Description**: `FactoryEnum.Microsoft` path exists but is never used. Dead code.
 - **Action**: [ ] Pending discussion
 
-### SIMP-003: Percentile calculation duplicated
-- **Location**: `Manager.cs:80-85`, `HtmlReport.cs:174-181`
+### SIMP-003: Percentile calculation duplicated ✅ COMPLETED
+- **Location**: ~~`ConsoleReporter.cs:132-138`, `HtmlReport.cs:169-176`~~ → `StatsUtils.Percentile()`
 - **Severity**: Low
-- **Description**: Same percentile logic in two places.
-- **Suggested Fix**: Extract to shared utility method.
-- **Action**: [ ] Pending discussion
+- **Description**: ~~Two different percentile implementations with different algorithms (Round vs Ceiling-1).~~
+- **Resolution**:
+  - Created `StatsUtils.cs` with shared `Percentile(List<double>, double)` method
+  - Uses "ceiling - 1" algorithm (nearest-rank percentile, more standard)
+  - Updated ConsoleReporter and HtmlReport to use shared method
+  - Fixes subtle inconsistency between console and HTML report percentiles
+- **Action**: [x] Completed 2025-01-10
 
-### SIMP-004: IsError predicate duplicated
-- **Location**: `Manager.cs:565-566`, `HtmlReport.cs:68-69`
+### SIMP-004: IsError predicate duplicated ✅ COMPLETED
+- **Location**: ~~`Manager.cs:565-566`, `HtmlReport.cs:68-69`~~ → `DataPoint.IsError()`
 - **Severity**: Low
-- **Description**: Same error detection logic defined twice.
-- **Suggested Fix**: Extract to `DataPoint` extension method or shared utility.
-- **Action**: [ ] Pending discussion
+- **Description**: ~~Same error detection logic defined twice.~~
+- **Resolution**:
+  - Added `IsError()` instance method to `DataPoint` struct
+  - Removed duplicate static methods from `ConsoleReporter.cs` and `HtmlReport.cs`
+  - Updated all call sites in Manager, ConsoleReporter, and HtmlReport to use `data.IsError()`
+  - No boxing or performance impact (verified via research)
+- **Action**: [x] Completed 2025-01-10
 
 ### SIMP-005: ProcessData O(n^2) algorithm ✅ COMPLETED
 - **Location**: ~~`Manager.cs:179-236`~~ (refactored to ~180-206)
@@ -217,9 +239,23 @@ This document tracks issues found during code review and their resolution status
 |----------|-------|
 | **P0 - Fix Now** | (none) |
 | **P1 - Fix Soon** | (none) |
-| **P2 - Nice to Have** | AP-003, AP-002, AP-004, AP-005, AP-006, AP-007, SIMP-002 thru SIMP-004 |
+| **P2 - Nice to Have** | AP-002, AP-004, AP-006, AP-007, SIMP-002 |
 | **P3 - Cleanup** | BUG-001, BUG-002, BUG-003, BUG-004, BUG-005, SIMP-006, DEAD-002, DEAD-003, DEAD-004 |
-| **Completed** | SIMP-001, DEAD-001, SIMP-005, AP-001 |
+| **Completed** | SIMP-001, DEAD-001, SIMP-005, AP-001, AP-003, SIMP-004, SIMP-003, AP-005 |
+
+---
+
+## Investigation
+
+### INV-001: Verify YAML phase functionality
+- **Location**: `MainService.cs`, `config.yaml`
+- **Severity**: Medium
+- **Description**: Need to verify that YAML configuration with phases is actually working correctly. Questions to investigate:
+  - Does multi-phase execution work end-to-end?
+  - Are results aggregated correctly across phases?
+  - Does the HTML report show phase-separated data?
+  - Is `config.yaml` a valid test case?
+- **Action**: [ ] Pending investigation
 
 ---
 

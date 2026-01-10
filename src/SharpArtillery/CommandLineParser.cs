@@ -264,13 +264,13 @@ internal static class CommandLineParser
         var config = new ArtilleryConfig
         {
             Target = parseResult.GetValue(targetOption),
-            Clients = parseResult.GetValue(clientsOption),
+            Vu = parseResult.GetValue(clientsOption),
             MaxRequests = parseResult.GetValue(maxRequestsOption),
             Duration = parseResult.GetValue(durationOption),
             RequestTimeout = parseResult.GetValue(timeoutOption),
             Method = parseResult.GetValue(methodOption),
             Yaml = parseResult.GetValue(yamlOption),
-            ConstantRps = parseResult.GetValue(rpsOption) ?? 0,
+            ConstantRps = parseResult.GetValue(rpsOption),
             AutoTuneMaxRps = parseResult.GetValue(autoTuneOption),
             AutoTuneMaxClients = parseResult.GetValue(autoTuneMaxOption),
             AutoTuneStep = parseResult.GetValue(autoTuneStepOption),

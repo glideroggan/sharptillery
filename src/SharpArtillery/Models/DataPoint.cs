@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net;
 
 namespace SharpArtillery.Models;
@@ -32,4 +32,10 @@ public struct DataPoint
     public string? ProtocolVersion { get; set; }
     public long? RequestContentLengthBytes { get; set; }
     public long? ResponseContentLengthBytes { get; set; }
+
+    /// <summary>
+    /// Returns true if this data point represents an error (non-2xx status or has error message).
+    /// </summary>
+    public bool IsError() =>
+        !string.IsNullOrEmpty(Error) || (int)Status < 200 || (int)Status >= 300;
 }
