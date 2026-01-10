@@ -176,6 +176,43 @@ internal static class HtmlReport
         var maxLatency = okLatencies.Count > 0 ? okLatencies[^1] : 0d;
         var meanLatency = okLatencies.Count > 0 ? okLatencies.Average() : 0d;
 
+        // Per-phase breakdown with detailed stats
+        var phaseBreakdown = requestData
+            .Where(d => !string.IsNullOrWhiteSpace(d.PhaseName))
+            .GroupBy(d => d.PhaseName!)
+            .Select(g =>
+            {
+                var phaseData = g.ToList();
+                var phaseErrors = phaseData.Count(d => d.IsError());
+                var phaseOkLatencies = phaseData
+                    .Where(d => !d.IsError())
+                    .Select(d => d.ResponseTime.TotalMilliseconds)
+                    .ToList();
+                phaseOkLatencies.Sort();
+                
+                var phaseDuration = phaseData.Count > 0
+                    ? phaseData.Max(d => d.RequestTimeLine.TotalSeconds) - 
+                      phaseData.Min(d => d.RequestTimeLine.TotalSeconds)
+                    : 0d;
+                // Add a small epsilon to avoid division by zero for very short phases
+                if (phaseDuration < 0.1) phaseDuration = 1.0;
+                
+                return new
+                {
+                    Phase = g.Key,
+                    Requests = phaseData.Count,
+                    Errors = phaseErrors,
+                    ErrorRatio = phaseData.Count > 0 ? (double)phaseErrors / phaseData.Count : 0d,
+                    DurationSeconds = phaseDuration,
+                    AverageRps = phaseDuration > 0 ? phaseData.Count / phaseDuration : 0d,
+                    MeanLatencyMs = phaseOkLatencies.Count > 0 ? phaseOkLatencies.Average() : 0d,
+                    P50LatencyMs = StatsUtils.Percentile(phaseOkLatencies, 0.50),
+                    P95LatencyMs = StatsUtils.Percentile(phaseOkLatencies, 0.95),
+                    P99LatencyMs = StatsUtils.Percentile(phaseOkLatencies, 0.99)
+                };
+            })
+            .ToList();
+
         var summary = new
         {
             Endpoint = url,
@@ -200,7 +237,8 @@ internal static class HtmlReport
             P50LatencyMs = StatsUtils.Percentile(okLatencies, 0.50),
             P90LatencyMs = StatsUtils.Percentile(okLatencies, 0.90),
             P95LatencyMs = StatsUtils.Percentile(okLatencies, 0.95),
-            P99LatencyMs = StatsUtils.Percentile(okLatencies, 0.99)
+            P99LatencyMs = StatsUtils.Percentile(okLatencies, 0.99),
+            PhaseBreakdown = phaseBreakdown
         };
 
         return JsonSerializer.Serialize(summary, Options);

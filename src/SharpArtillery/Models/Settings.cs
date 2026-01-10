@@ -18,6 +18,11 @@ internal sealed class Settings
     public string? Method { get; init; }
     public Dictionary<string,string>? Headers { get; set; }
     public object? JsonContent { get; set; }
+    
+    /// <summary>
+    /// Name of the current phase (for multi-phase YAML tests).
+    /// </summary>
+    public string? PhaseName { get; set; }
 
     /// <summary>
     /// Validates that settings are consistent.

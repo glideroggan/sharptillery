@@ -43,23 +43,40 @@ public class ArtilleryConfig
     /// <param name="vuOverride">Optional VU override (e.g., from YAML phase)</param>
     /// <param name="durationOverride">Optional duration override (e.g., from YAML phase)</param>
     /// <param name="maxRequestsOverride">Optional max requests override (e.g., from YAML phase)</param>
+    /// <param name="phaseName">Optional phase name for multi-phase YAML tests</param>
+    /// <param name="methodOverride">Optional HTTP method override (e.g., from YAML flow step)</param>
+    /// <param name="headersOverride">Optional headers override (e.g., from YAML flow step)</param>
+    /// <param name="jsonContentOverride">Optional JSON body override (e.g., from YAML flow step)</param>
     internal Settings ToSettings(
         string? targetOverride = null,
         int? vuOverride = null,
         TimeSpan? durationOverride = null,
-        int? maxRequestsOverride = null)
+        int? maxRequestsOverride = null,
+        string? phaseName = null,
+        string? methodOverride = null,
+        Dictionary<string, string>? headersOverride = null,
+        object? jsonContentOverride = null)
     {
+        // Merge headers: YAML headers override/extend CLI headers
+        var mergedHeaders = new Dictionary<string, string>(Headers);
+        if (headersOverride != null)
+        {
+            foreach (var kvp in headersOverride)
+                mergedHeaders[kvp.Key] = kvp.Value;
+        }
+        
         return new Settings
         {
             Target = targetOverride ?? Target,
             Vu = vuOverride ?? Vu,
             Duration = durationOverride ?? Duration,
             MaxRequests = maxRequestsOverride ?? MaxRequests,
-            Method = Method,
-            Headers = Headers,
-            JsonContent = JsonContent,
+            Method = methodOverride ?? Method,
+            Headers = mergedHeaders,
+            JsonContent = jsonContentOverride ?? JsonContent,
             ConstantRps = ConstantRps,
             RequestTimeout = RequestTimeout,
+            PhaseName = phaseName,
             AutoTune = AutoTuneMaxRps
                 ? new AutoTuneSettings(
                     MaxClients: AutoTuneMaxClients ?? 256,

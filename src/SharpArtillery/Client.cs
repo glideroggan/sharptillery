@@ -72,7 +72,8 @@ internal sealed class Client
 
                 var requestResults = new DataPoint
                 {
-                    StartTime = DateTime.UtcNow
+                    StartTime = DateTime.UtcNow,
+                    PhaseName = _manager.Settings.PhaseName
                 };
                 requestResults.RequestSentTime = requestResults.StartTime;
 
@@ -130,7 +131,8 @@ internal sealed class Client
                 requestResults.EndTime = DateTime.UtcNow;
                 requestResults.ResponseTime = requestResults.EndTime - requestResults.StartTime;
                 requestResults.Latency = requestResults.ResponseTime;
-                requestResults.RequestTimeLine = _manager.TotalTimeTimer.Elapsed;
+                // Use GlobalTimeTimer for report timeline (spans all phases)
+                requestResults.RequestTimeLine = _manager.GlobalTimeTimer.Elapsed;
                 
                 _manager.ResponseMessageQueue.Enqueue(requestResults); 
             }

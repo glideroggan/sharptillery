@@ -24,7 +24,16 @@ internal sealed class Manager : IDisposable
     private long _totalErrors;
     private (int BestClients, double BestRps)? _autoTuneResult;
 
+    /// <summary>
+    /// Timer for current phase duration (restarted each phase).
+    /// </summary>
     public readonly Stopwatch TotalTimeTimer = new();
+    
+    /// <summary>
+    /// Global timer spanning all phases for report timeline (never reset).
+    /// </summary>
+    public readonly Stopwatch GlobalTimeTimer = new();
+    
     public Settings Settings { get; private set; } = new();
     private int _averageRps;
     private readonly ICustomHttpClientFactory _httpClientFactory;
@@ -120,6 +129,8 @@ internal sealed class Manager : IDisposable
         Interlocked.Exchange(ref _totalErrors, 0);
         // reset progress
         GetProgress = new();
+        // Reset StartClients gate for this phase (clients wait until RunTest sets it)
+        StartClients.Reset();
         // recreate clients per run so they bind to the current cancellation token
         Console.Out.WriteLine("Preparing clients...");
         Clientcts = new CancellationTokenSource();
@@ -292,11 +303,16 @@ internal sealed class Manager : IDisposable
     {
         for (var i = 0; i < count; i++)
         {
-            var method = Settings.Method switch
+            var method = Settings.Method?.ToUpperInvariant() switch
             {
-                null => HttpMethod.Get,
-                "PUT" => HttpMethod.Put,
+                "GET" => HttpMethod.Get,
                 "POST" => HttpMethod.Post,
+                "PUT" => HttpMethod.Put,
+                "DELETE" => HttpMethod.Delete,
+                "PATCH" => HttpMethod.Patch,
+                "HEAD" => HttpMethod.Head,
+                "OPTIONS" => HttpMethod.Options,
+                null => HttpMethod.Get,
                 _ => HttpMethod.Get
             };
             var req = new HttpRequestMessage(method, Settings.Target);
@@ -345,8 +361,15 @@ internal sealed class Manager : IDisposable
         Console.Out.WriteLine("Starting clients...");
         StartClients.Set();
 
-        _responseData.Clear();
-        TotalTimeTimer.Start();
+        // Track the starting count for multi-phase assertion (data accumulates across phases)
+        var phaseStartCount = _responseData.Count;
+        
+        // Don't clear _responseData - accumulate across phases for multi-phase YAML tests
+        TotalTimeTimer.Restart();
+        
+        // Start global timer only once (spans all phases for report timeline)
+        if (!GlobalTimeTimer.IsRunning)
+            GlobalTimeTimer.Start();
 
         Task? autoTuneTask = null;
         if (Settings.AutoTune != null)
@@ -364,7 +387,7 @@ internal sealed class Manager : IDisposable
         {
             // we're done?
             if (!Clientcts.IsCancellationRequested &&
-                Settings.MaxRequests.HasValue && Settings.MaxRequests == _responseData.Count)
+                Settings.MaxRequests.HasValue && Settings.MaxRequests == (_responseData.Count - phaseStartCount))
                 Clientcts.Cancel();
             if (Settings.Duration.HasValue && TotalTimeTimer.Elapsed > Settings.Duration)
                 Clientcts.Cancel();
@@ -397,7 +420,7 @@ internal sealed class Manager : IDisposable
 
         Debug.Assert(ResponseMessageQueue.IsEmpty);
         UpdateReport(ref timer, ref accumulatedRequests, ref accumulatedErrors, ref accumulatedMeanLatency);
-        Debug.Assert(_responseData.Count == GetProgress.Requests);
+        Debug.Assert(_responseData.Count - phaseStartCount == GetProgress.Requests);
 
         _averageRps = (int)(GetProgress.Requests / TotalTimeTimer.Elapsed.TotalSeconds);
 

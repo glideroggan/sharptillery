@@ -1,0 +1,20 @@
+settings:
+  target: "http://localhost:8080"
+  timeout: 5
+
+phases:
+  - name: "Flow Test"
+    duration: 10
+    vu: 3
+
+scenarios:
+  - name: "Multi-step flow test"
+    flow:
+      # Step 1: GET request
+      - get:
+          url: "/Test/get"
+      # Step 2: Think time (1 second pause)
+      - think: 1
+      # Step 3: Another GET request
+      - get:
+          url: "/Test/get"

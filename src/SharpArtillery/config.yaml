@@ -1,21 +1,18 @@
-﻿settings:
-  target: "https://localhost"
-#  target: "https://familyhome-api.azurewebsites.net"
+settings:
+  target: "http://localhost:8080"
+  timeout: 5
 
-  phases:
-    - duration: 5
-      arrivalRate: 10
-      name: warm up
-    - duration: 15
-      arrivalRate: 10
-      rampUp: 700
-      name: Ramp up
-#    - duration: 10
-#      arrivalRate: 500
-#      name: overkill
+# Top-level phases (preferred format)
+phases:
+  - name: "Warm-up"
+    duration: 5
+    vu: 2
+  - name: "Load"
+    duration: 10
+    vu: 5
 
 scenarios:
-  - name: "Load test"
+  - name: "Simple GET test"
     flow:
       - get:
-          url: "/test/get"
+          url: "/Test/get"
