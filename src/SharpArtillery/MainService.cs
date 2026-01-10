@@ -155,9 +155,14 @@ public sealed class MainService
 
         Debug.Assert(manager.Results.Count == manager.GetProgress.Requests);
 
-
-        StandardOutReport(manager.TotalTimeTimer, manager.Results);
-        manager.Report();
+        var reporter = new ConsoleReporter(
+            manager.Settings,
+            manager.Results,
+            manager.TotalTimeTimer.Elapsed,
+            manager.AverageRps,
+            manager.AutoTuneResult);
+        reporter.PrintSummary();
+        reporter.PrintPercentiles();
     }
 
 
@@ -179,39 +184,5 @@ public sealed class MainService
             default:
                 throw new NotImplementedException();
         }
-    }
-
-    private static void StandardOutReport(Stopwatch timer, List<DataPoint> completedTasks)
-    {
-        Console.Out.WriteLine($"Test took {timer.Elapsed.TotalSeconds} seconds");
-
-        if (completedTasks.Count == 0)
-        {
-            Console.Out.WriteLine("No requests completed.");
-            return;
-        }
-        // aggregate results
-        var averageLatency = completedTasks.Average(r => r.ResponseTime.TotalMilliseconds);
-        var maxLatency = completedTasks.MaxBy(r => r.ResponseTime).ResponseTime.TotalMilliseconds;
-
-        // breakdown of latency
-        Console.Out.WriteLine($"Average latency: {averageLatency:0.00} ms");
-        Console.Out.WriteLine($"Max     latency: {maxLatency} ms");
-
-        // sum up all different statuscodes
-        var countedStatuses = from d in completedTasks
-            group d by d.Status
-            into status
-            select new { StatusCode = status, Count = status.Count() };
-        foreach (var status in countedStatuses)
-        {
-            Console.Out.WriteLine($"{status.StatusCode.Key} : {status.Count}");
-        }
-
-        var errors = completedTasks.Count(d => !string.IsNullOrEmpty(d.Error) || (int)d.Status < 200 || (int)d.Status >= 300);
-        Console.Out.WriteLine($"Errors: {errors}");
-        var firstError = completedTasks.FirstOrDefault(x => !string.IsNullOrEmpty(x.Error));
-        var firstErrorText = string.IsNullOrEmpty(firstError.Error) ? null : firstError.Error;
-        Console.Out.WriteLine($"Error Text: {firstErrorText}");
     }
 }

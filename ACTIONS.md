@@ -4,6 +4,7 @@ Last updated: 2025-01-10
 
 ## Recent Changes
 
+- **2025-01-10**: AP-001 partial — Extracted `ConsoleReporter.cs` from Manager. Reduced Manager from 582 to 486 lines.
 - **2025-01-10**: SIMP-005 completed — Replaced O(n²) RPS calculation with O(n) sliding window algorithm. Processing 10k requests now instant.
 - **2025-01-10**: DEAD-001 completed — Implemented smooth per-client rate limiting (`-r`/`--rps`). Each client paces independently with staggered start and ±20% jitter for realistic load distribution.
 - **2025-01-10**: SIMP-001 completed — Migrated from custom `FlagParser` to `System.CommandLine`. Added long flag support, auto-generated help, centralized validation. Deleted 227 lines of custom parsing code.
@@ -63,12 +64,17 @@ This document tracks issues found during code review and their resolution status
 
 ## Anti-Patterns
 
-### AP-001: God class - Manager
-- **Location**: `Manager.cs` (600+ lines)
+### AP-001: God class - Manager (Partially Addressed)
+- **Location**: `Manager.cs` (~~600+~~ 486 lines)
 - **Severity**: Medium
-- **Description**: Handles queuing, timing, progress, auto-tune, reporting, client management, and RPS calculation all in one class.
-- **Suggested Fix**: Split into focused classes (RequestQueue, ResponseCollector, AutoTuner, ProgressTracker).
-- **Action**: [ ] Pending discussion
+- **Description**: Handles queuing, timing, progress, auto-tune, ~~reporting,~~ client management, and RPS calculation all in one class.
+- **Progress**:
+  - [x] Extracted console reporting to `ConsoleReporter.cs` (146 lines)
+  - [x] Removed `Report()` method from Manager
+  - [x] Consolidated `IsError()` logic in one place
+  - [x] Manager now under 500 lines
+- **Remaining**: Could further extract RequestQueue, AutoTuner, ProgressTracker
+- **Action**: [~] Partially complete 2025-01-10
 
 ### AP-002: Thread instead of Task
 - **Location**: `MainService.cs:151,175`

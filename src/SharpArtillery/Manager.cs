@@ -75,107 +75,15 @@ internal sealed class Manager : IDisposable
     private CancellationTokenSource Clientcts { get; set; }
     public CancellationToken ClientKillToken => Clientcts.Token;
 
+    /// <summary>
+    /// Gets the auto-tune result if auto-tuning was enabled.
+    /// </summary>
+    public (int BestClients, double BestRps)? AutoTuneResult => _autoTuneResult;
 
-    public void Report()
-    {
-        int GetPercentage(List<double> doubles, float percent)
-        {
-            return (int)MathF.Round(percent * doubles.Count) >= doubles.Count
-                ? doubles.Count - 1
-                : (int)MathF.Round(percent * doubles.Count);
-        }
-
-        var okRequests = _responseData.Where(x => !IsError(x)).ToList();
-        var errorRequests = _responseData.Where(IsError).ToList();
-
-
-        Console.Out.WriteLine(
-            string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Target URL:", Settings.Target));
-        Console.Out.WriteLine(Settings.MaxRequests > 0
-            ? string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Max requests:", Settings.MaxRequests)
-            : string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Duration:",
-                Settings.Duration!.Value.ToString()));
-        Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Concurrency level:",
-            Settings.Vu));
-        Console.Out.WriteLine();
-
-        Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Completed requests:",
-            okRequests.Count + errorRequests.Count));
-        Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Total errors:",
-            errorRequests.Count));
-        Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Total time:",
-            $"{TotalTimeTimer.Elapsed.TotalSeconds} s"));
-        Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Average RPS:",
-            _averageRps));
-        if (_autoTuneResult.HasValue)
-        {
-            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}",
-                "AutoTune peak (sampled):",
-                $"{_autoTuneResult.Value.BestRps:F1} rps @ {_autoTuneResult.Value.BestClients} clients"));
-        }
-        var mean = okRequests.Count > 0 ? okRequests.Average(r => r.ResponseTime.TotalMilliseconds) : 0;
-        Console.Out.WriteLine(
-            string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Mean latency:", $"{mean:F} ms"));
-        Console.Out.WriteLine();
-
-        Console.Out.WriteLine("Percentage of the OK requests served within a certain time");
-        var t = okRequests.Select(x => x.ResponseTime.TotalMilliseconds).ToList();
-        t.Sort();
-        if (t.Count == 0)
-        {
-            // there were no completed requests at all
-            Console.Out.WriteLine("No requests went fine!");
-        }
-        else
-        {
-            // 50% take median
-            var i = GetPercentage(t, .5f);
-            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "50%", $"{t[i]:F} ms"));
-            // 90%
-            i = GetPercentage(t, .9f);
-            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "90%", $"{t[i]:F} ms"));
-            // 95%
-            i = GetPercentage(t, .95f);
-            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "95%", $"{t[i]:F} ms"));
-            // 99% divide all response-time into 100
-            i = GetPercentage(t, .99f);
-            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "99%", $"{t[i]:F} ms"));
-            // 100% take highest response-time, everything is faster than this
-            Console.Out.WriteLine(
-                string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "100%", $"{t[^1]:F} ms"));
-        }
-
-        Console.Out.WriteLine("Percentage of the ERROR requests served within a certain time");
-        var errorList = errorRequests.Select(x => x.ResponseTime.TotalMilliseconds).ToList();
-        errorList.Sort();
-        if (errorList.Count == 0)
-        {
-            // there were no completed requests at all
-            Console.Out.WriteLine("No Errors");
-        }
-        else
-        {
-            // 50% take median
-            var i = GetPercentage(errorList, .5f);
-            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "50%",
-                $"{errorList[i]:F} ms"));
-            // 90%
-            i = GetPercentage(errorList, .9f);
-            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "90%",
-                $"{errorList[i]:F} ms"));
-            // 95%
-            i = GetPercentage(errorList, .95f);
-            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "95%",
-                $"{errorList[i]:F} ms"));
-            // 99% divide all response-time into 100
-            i = GetPercentage(errorList, .99f);
-            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "99%",
-                $"{errorList[i]:F} ms"));
-            // 100% take highest response-time, everything is faster than this
-            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "100%",
-                $"{errorList[^1]:F} ms"));
-        }
-    }
+    /// <summary>
+    /// Gets the average RPS calculated after test completion.
+    /// </summary>
+    public int AverageRps => _averageRps;
 
     public async Task ProcessData()
     {
@@ -533,9 +441,6 @@ internal sealed class Manager : IDisposable
         }
     }
 
-    private static bool IsError(DataPoint dataPoint) =>
-        !string.IsNullOrEmpty(dataPoint.Error) || (int)dataPoint.Status < 200 || (int)dataPoint.Status >= 300;
-
     private void DequeueAndAccumulate(ref int accumulatedRequests, ref int accumulatedErrors,
         ref float accumulatedMeanLatency)
     {
@@ -557,7 +462,7 @@ internal sealed class Manager : IDisposable
         foreach (var data in results)
         {
             _responseData.Add(data);
-            if (IsError(data))
+            if (ConsoleReporter.IsError(data))
             {
                 accumulatedErrors++;
                 intervalErrors++;
@@ -567,7 +472,7 @@ internal sealed class Manager : IDisposable
         if (intervalErrors > 0)
             Interlocked.Add(ref _totalErrors, intervalErrors);
 
-        accumulatedMeanLatency += (float)results.Where(x => !IsError(x))
+        accumulatedMeanLatency += (float)results.Where(x => !ConsoleReporter.IsError(x))
             .Sum(x => x.ResponseTime.TotalMilliseconds);
     }
 }
