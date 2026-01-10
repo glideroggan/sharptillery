@@ -1,4 +1,4 @@
-﻿#pragma warning disable CA1848
+#pragma warning disable CA1848
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -32,13 +32,6 @@ namespace SharpArtillery;
  * 
  */
 
-[Flags]
-internal enum FlagEnum
-{
-    None = 0,
-    ConstantRps
-}
-
 internal sealed class Manager : IDisposable
 {
     private volatile List<DataPoint> _responseData = new();
@@ -48,11 +41,19 @@ internal sealed class Manager : IDisposable
     private (int BestClients, double BestRps)? _autoTuneResult;
 
     public readonly Stopwatch TotalTimeTimer = new();
-    private FlagEnum _flags;
     public Settings Settings { get; private set; } = new();
     private int _averageRps;
-    private SemaphoreSlim? _blocker;
     private readonly ICustomHttpClientFactory _httpClientFactory;
+
+    /// <summary>
+    /// Exposes rate limiting config for clients to create their own rate limiters.
+    /// </summary>
+    public int? ConstantRps => Settings.ConstantRps;
+
+    /// <summary>
+    /// Number of active clients (used by rate limiters for per-client interval calculation).
+    /// </summary>
+    public int ClientCount => _clients.Count;
 
     private readonly List<Client> _clients = new();
     private readonly List<Task> _clientTasks = new();
@@ -245,7 +246,7 @@ internal sealed class Manager : IDisposable
 
     public void Dispose()
     {
-        throw new NotImplementedException();
+        Clientcts?.Dispose();
     }
 
     public ValueTask PrepareForTest(Settings settings)
@@ -264,13 +265,12 @@ internal sealed class Manager : IDisposable
         _clients.Clear();
         _clientTasks.Clear();
         for (var i = 0; i < settings.Vu; i++)
-            _clients.Add(new Client(this, _httpClientFactory, _loggerFactory));
+            _clients.Add(new Client(this, _httpClientFactory, _loggerFactory, clientIndex: i));
 
-        // TODO: not implemented yet into the flow
         if (settings.ConstantRps > 0)
         {
-            _blocker = new SemaphoreSlim(settings.ConstantRps.Value, settings.ConstantRps.Value);
-            _flags |= FlagEnum.ConstantRps;
+            var rpsPerClient = (double)settings.ConstantRps.Value / settings.Vu;
+            Console.Out.WriteLine($"Rate limiting: {settings.ConstantRps} RPS across {settings.Vu} clients ({rpsPerClient:F1} RPS/client)");
         }
 
         if (settings.Duration == null && settings.MaxRequests == null)
@@ -302,7 +302,8 @@ internal sealed class Manager : IDisposable
         if (count <= 0) return;
         for (var i = 0; i < count; i++)
         {
-            var client = new Client(this, _httpClientFactory, _loggerFactory);
+            var clientIndex = _clients.Count; // New client gets next index
+            var client = new Client(this, _httpClientFactory, _loggerFactory, clientIndex);
             _clients.Add(client);
             _clientTasks.Add(Task.Run(() => client.RunAsync(ClientKillToken), ClientKillToken));
         }

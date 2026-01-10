@@ -4,6 +4,7 @@ Last updated: 2025-01-10
 
 ## Recent Changes
 
+- **2025-01-10**: DEAD-001 completed — Implemented smooth per-client rate limiting (`-r`/`--rps`). Each client paces independently with staggered start and ±20% jitter for realistic load distribution.
 - **2025-01-10**: SIMP-001 completed — Migrated from custom `FlagParser` to `System.CommandLine`. Added long flag support, auto-generated help, centralized validation. Deleted 227 lines of custom parsing code.
 
 ## Overview
@@ -163,11 +164,20 @@ This document tracks issues found during code review and their resolution status
 
 ## Dead/Incomplete Code
 
-### DEAD-001: ConstantRps not wired
-- **Location**: `Manager.cs:270-274`
+### DEAD-001: ConstantRps not wired ✅ COMPLETED
+- **Location**: ~~`Manager.cs:270-274`~~ (refactored)
 - **Severity**: Medium
-- **Description**: `_blocker` SemaphoreSlim is created but never used to throttle requests. The `-r` flag does nothing.
-- **Action**: [ ] Pending discussion (implement or remove)
+- **Description**: ~~`_blocker` SemaphoreSlim is created but never used to throttle requests. The `-r` flag does nothing.~~
+- **Resolution**:
+  - Created `ClientRateLimiter.cs` with per-client rate limiting
+  - Each client calculates interval: `1000ms / (totalRPS / clientCount)`
+  - Staggered start delays prevent synchronized bursts
+  - ±20% jitter creates realistic load distribution
+  - Removed unused `_blocker` SemaphoreSlim and `FlagEnum` enum
+  - Fixed `Manager.Dispose()` to actually dispose resources
+  - Updated `-r` flag description in help text
+- **Verified**: 10 RPS → 5.33s for 50 requests; 100 RPS → ~93 RPS achieved (jitter expected)
+- **Action**: [x] Completed 2025-01-10
 
 ### DEAD-002: Excel reporting disabled
 - **Location**: `MainService.cs:206-208`
@@ -193,11 +203,11 @@ This document tracks issues found during code review and their resolution status
 
 | Priority | Items |
 |----------|-------|
-| **P0 - Fix Now** | DEAD-001 (ConstantRps broken - users think they're rate-limiting but aren't) |
+| **P0 - Fix Now** | (none) |
 | **P1 - Fix Soon** | SIMP-005 (O(n²) algorithm causes slow post-processing) |
 | **P2 - Nice to Have** | AP-001, AP-003, AP-002, AP-004, AP-005, AP-006, AP-007, SIMP-002 thru SIMP-004 |
 | **P3 - Cleanup** | BUG-001, BUG-002, BUG-003, BUG-004, BUG-005, SIMP-006, DEAD-002, DEAD-003, DEAD-004 |
-| **Completed** | SIMP-001 (FlagParser → System.CommandLine migration) |
+| **Completed** | SIMP-001 (FlagParser → System.CommandLine), DEAD-001 (Rate limiting implemented) |
 
 ---
 

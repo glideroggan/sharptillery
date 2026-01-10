@@ -1,4 +1,4 @@
-﻿#pragma warning disable CA1848
+#pragma warning disable CA1848
 using System;
 using System.Diagnostics;
 using System.Net;
@@ -20,10 +20,13 @@ internal sealed class Client
     private readonly Manager _manager;
     private readonly ICustomHttpClientFactory _httpClientFactory;
     private readonly ILogger<Client> _logger;
+    private readonly int _clientIndex;
+    private ClientRateLimiter? _rateLimiter;
 
-    public Client(Manager manager, ICustomHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory)
+    public Client(Manager manager, ICustomHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, int clientIndex)
     {
         _manager = manager;
+        _clientIndex = clientIndex;
         _logger = loggerFactory.CreateLogger<Client>();
         _httpClientFactory = httpClientFactory;
     }
@@ -33,11 +36,27 @@ internal sealed class Client
         try
         {
             _manager.StartClients.WaitOne();
+
+            // Initialize rate limiter if RPS limiting is enabled
+            if (_manager.ConstantRps.HasValue && _manager.ConstantRps.Value > 0)
+            {
+                _rateLimiter = new ClientRateLimiter(
+                    _manager.ConstantRps.Value,
+                    _manager.ClientCount,
+                    _clientIndex);
+            }
+
             var isDurationMode = _manager.Settings.Duration.HasValue;
             // TODO: should set in a more global kill switch here, so that if cancellation is requested, but
             // we failed on dequeue, then we will want to try to dequeue again
             while (!cancellationToken.IsCancellationRequested)
             {
+                // Apply rate limiting if enabled (wait for our turn)
+                if (_rateLimiter != null)
+                {
+                    await _rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
+                }
+
                 if (!_manager.RequestMessageQueue.TryDequeue(out var req))
                 {
                     if (!isDurationMode)
