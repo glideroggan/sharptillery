@@ -179,59 +179,29 @@ internal sealed class Manager : IDisposable
 
     public async Task ProcessData()
     {
-        await Console.Out.WriteAsync("Processing data...");
+        await Console.Out.WriteLineAsync("Processing data...");
 
-        // calculate the RPS for each request data by looking at each data point and take all other points
-        // before it (up to a second) and count the number of requests. This should be the accurate number of rps
-        var timer = Stopwatch.StartNew();
+        // Calculate RPS for each data point using O(n) sliding window algorithm.
+        // For each point, count how many requests completed within the 1-second window
+        // ending at that point's completion time: (point.Time - 1s, point.Time]
         _responseData.Sort((a, b) =>
             a.RequestReceivedTime < b.RequestReceivedTime ? -1 :
             a.RequestReceivedTime == b.RequestReceivedTime ? 0 : 1);
 
-        int? lastCountedNumerOfRequests = null;
-        int? lastIndex = null;
-        var startReached = false;
-        for (var index = _responseData.Count - 1; index >= 0; index--)
+        var left = 0;
+        for (var right = 0; right < _responseData.Count; right++)
         {
-            var point = _responseData[index];
-            if (startReached)
-            {
-                lastCountedNumerOfRequests = lastCountedNumerOfRequests == 0 ? 0 : lastCountedNumerOfRequests - 1;
-            }
+            var point = _responseData[right];
+            var windowStart = point.RequestReceivedTime.AddSeconds(-1);
 
-            var numOfRequests = lastCountedNumerOfRequests ?? 0;
+            // Advance left pointer past entries at or before windowStart
+            // This matches the original condition: (windowStart < entry.Time]
+            while (left <= right && _responseData[left].RequestReceivedTime <= windowStart)
+                left++;
 
-            if (!startReached)
-            {
-                for (var i2 = lastIndex ?? index; i2 >= 0; i2--)
-                {
-                    var isValid = point.RequestReceivedTime.AddSeconds(-1) < _responseData[i2].RequestReceivedTime &&
-                                  _responseData[i2].RequestReceivedTime <= point.RequestReceivedTime;
-                    if (!isValid)
-                    {
-                        lastIndex = i2;
-                        lastCountedNumerOfRequests = numOfRequests - 1;
-
-                        break;
-                    }
-
-                    numOfRequests++;
-                    if (i2 == 0)
-                    {
-                        startReached = true;
-                    }
-                }
-            }
-
-            point.Rps = numOfRequests;
-            _responseData[index] = point;
-            if (!(timer.Elapsed.TotalSeconds > 1)) continue;
-
-            Console.Out.Write(".");
-            timer.Restart();
+            point.Rps = right - left + 1;
+            _responseData[right] = point;
         }
-
-        Console.Out.WriteLine();
 
         Done.WaitOne();
     }

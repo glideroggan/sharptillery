@@ -4,6 +4,7 @@ Last updated: 2025-01-10
 
 ## Recent Changes
 
+- **2025-01-10**: SIMP-005 completed — Replaced O(n²) RPS calculation with O(n) sliding window algorithm. Processing 10k requests now instant.
 - **2025-01-10**: DEAD-001 completed — Implemented smooth per-client rate limiting (`-r`/`--rps`). Each client paces independently with staggered start and ±20% jitter for realistic load distribution.
 - **2025-01-10**: SIMP-001 completed — Migrated from custom `FlagParser` to `System.CommandLine`. Added long flag support, auto-generated help, centralized validation. Deleted 227 lines of custom parsing code.
 
@@ -147,12 +148,17 @@ This document tracks issues found during code review and their resolution status
 - **Suggested Fix**: Extract to `DataPoint` extension method or shared utility.
 - **Action**: [ ] Pending discussion
 
-### SIMP-005: ProcessData O(n^2) algorithm
-- **Location**: `Manager.cs:179-236`
+### SIMP-005: ProcessData O(n^2) algorithm ✅ COMPLETED
+- **Location**: ~~`Manager.cs:179-236`~~ (refactored to ~180-206)
 - **Severity**: Medium
-- **Description**: RPS calculation iterates backwards through the list for each point. For 100k requests, this is 10 billion iterations.
-- **Suggested Fix**: Use O(n) sliding window algorithm.
-- **Action**: [ ] Pending discussion
+- **Description**: ~~RPS calculation iterates backwards through the list for each point. For 100k requests, this is 10 billion iterations.~~
+- **Resolution**:
+  - Replaced O(n²) nested loop with O(n) sliding window algorithm
+  - Uses two pointers: `left` and `right` moving forward through sorted data
+  - Each pointer traverses list once → total 2n operations
+  - Processing 10,000 requests now completes instantly (was seconds with dots)
+- **Verified**: 5,000 and 10,000 request runs complete with instant "Processing data..."
+- **Action**: [x] Completed 2025-01-10
 
 ### SIMP-006: TopupSettings nested in Manager
 - **Location**: `Manager.cs:72`
@@ -204,10 +210,10 @@ This document tracks issues found during code review and their resolution status
 | Priority | Items |
 |----------|-------|
 | **P0 - Fix Now** | (none) |
-| **P1 - Fix Soon** | SIMP-005 (O(n²) algorithm causes slow post-processing) |
+| **P1 - Fix Soon** | (none) |
 | **P2 - Nice to Have** | AP-001, AP-003, AP-002, AP-004, AP-005, AP-006, AP-007, SIMP-002 thru SIMP-004 |
 | **P3 - Cleanup** | BUG-001, BUG-002, BUG-003, BUG-004, BUG-005, SIMP-006, DEAD-002, DEAD-003, DEAD-004 |
-| **Completed** | SIMP-001 (FlagParser → System.CommandLine), DEAD-001 (Rate limiting implemented) |
+| **Completed** | SIMP-001 (FlagParser → System.CommandLine), DEAD-001 (Rate limiting), SIMP-005 (O(n) ProcessData) |
 
 ---
 
