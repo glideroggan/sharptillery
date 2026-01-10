@@ -64,17 +64,17 @@ This document tracks issues found during code review and their resolution status
 
 ## Anti-Patterns
 
-### AP-001: God class - Manager (Partially Addressed)
-- **Location**: `Manager.cs` (~~600+~~ 486 lines)
+### AP-001: God class - Manager ✅ COMPLETED
+- **Location**: `Manager.cs` (~~600+~~ 470 lines)
 - **Severity**: Medium
-- **Description**: Handles queuing, timing, progress, auto-tune, ~~reporting,~~ client management, and RPS calculation all in one class.
-- **Progress**:
-  - [x] Extracted console reporting to `ConsoleReporter.cs` (146 lines)
-  - [x] Removed `Report()` method from Manager
-  - [x] Consolidated `IsError()` logic in one place
-  - [x] Manager now under 500 lines
-- **Remaining**: Could further extract RequestQueue, AutoTuner, ProgressTracker
-- **Action**: [~] Partially complete 2025-01-10
+- **Description**: ~~Handles queuing, timing, progress, auto-tune, reporting, client management, and RPS calculation all in one class.~~
+- **Resolution**:
+  - Extracted console reporting to `ConsoleReporter.cs` (146 lines)
+  - Removed `Report()` method from Manager
+  - Consolidated `IsError()` logic in one place
+  - Removed stale TODO/BUG comments (already addressed or implemented)
+  - Manager now under 500 lines
+- **Action**: [x] Completed 2025-01-10
 
 ### AP-002: Thread instead of Task
 - **Location**: `MainService.cs:151,175`
@@ -217,9 +217,9 @@ This document tracks issues found during code review and their resolution status
 |----------|-------|
 | **P0 - Fix Now** | (none) |
 | **P1 - Fix Soon** | (none) |
-| **P2 - Nice to Have** | AP-001, AP-003, AP-002, AP-004, AP-005, AP-006, AP-007, SIMP-002 thru SIMP-004 |
+| **P2 - Nice to Have** | AP-003, AP-002, AP-004, AP-005, AP-006, AP-007, SIMP-002 thru SIMP-004 |
 | **P3 - Cleanup** | BUG-001, BUG-002, BUG-003, BUG-004, BUG-005, SIMP-006, DEAD-002, DEAD-003, DEAD-004 |
-| **Completed** | SIMP-001 (FlagParser → System.CommandLine), DEAD-001 (Rate limiting), SIMP-005 (O(n) ProcessData) |
+| **Completed** | SIMP-001, DEAD-001, SIMP-005, AP-001 |
 
 ---
 

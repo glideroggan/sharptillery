@@ -16,22 +16,6 @@ using SharpArtillery.Models;
 
 namespace SharpArtillery;
 
-/*
- * BUG:
- *  - Why do we get more latency running with more clients and having low constant rps?
- *      Looking at the server it still only have low connection rate, meaning that most clients aren't even sending.
- *      Maybe we can try starting each client with its own thread? Just to see if latency would go down.
- *          If it does, it probably means that a thread would get more scheduling time from cpu than a task does
- * TODO:
- *  Reporting:
- *      - take snapshots at 1s and in the reporting graph we can average all values
- *          this way we get a nicer graph
- *      - Add target endpoint targeted
- *      - Add the main things about a load test (https://www.freecodecamp.org/news/practical-guide-to-load-testing/)
- *          into the table of the html report
- * 
- */
-
 internal sealed class Manager : IDisposable
 {
     private volatile List<DataPoint> _responseData = new();
