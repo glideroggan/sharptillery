@@ -1,4 +1,4 @@
-﻿#pragma warning disable CA1848
+#pragma warning disable CA1848
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -12,7 +12,7 @@ using SharpArtillery.Reporting;
 
 namespace SharpArtillery;
 
-public class MainService
+public sealed class MainService
 {
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<MainService> _logger;
@@ -23,125 +23,90 @@ public class MainService
         _logger = loggerFactory.CreateLogger<MainService>();
     }
 
-    public async Task Main(string[] args)
+    /// <summary>
+    /// Main entry point - receives pre-validated config from CommandLineParser
+    /// </summary>
+    public async Task Run(ArtilleryConfig flags)
     {
-        try
+        var httpClientFactory = new CustomHttpClientFactory(null, FactoryEnum.Roger, flags);
+
+        Settings? settings;
+        var manager = new Manager(httpClientFactory, _loggerFactory);
+        
+        if (flags.YamlConfig != null)
         {
-            ArtilleryConfig flags;
-            try
+            var config = flags.YamlConfig;
+
+            var baseTarget = config.Settings.Target
+                             ?? throw new InvalidOperationException("YAML config is missing settings.target");
+            var phases = config.Settings.Phases
+                         ?? throw new InvalidOperationException("YAML config is missing settings.phases");
+            var getUrl = config.Scenarios?
+                             .FirstOrDefault()?
+                             .Flow?
+                             .FirstOrDefault()?
+                             .Get?
+                             .Url
+                         ?? throw new InvalidOperationException(
+                             "YAML config is missing scenarios[0].flow[0].get.url");
+
+            var endpoint = baseTarget + getUrl;
+
+            foreach (var phase in phases)
             {
-                flags = ProgramSettings.HandleConfigsAndSettings(args);
-            }
-            catch (ArgumentException e)
-            {
-                Console.Error.WriteLine($"Error: {e.Message}");
-                Environment.ExitCode = 2;
-                return;
-            }
-
-            if (flags.Quit) return;
-
-            var httpClientFactory = new CustomHttpClientFactory(null, FactoryEnum.Roger, flags);
-
-
-            // do we have phases?
-            Settings? settings;
-            // Manager? manager = null;
-            var manager = new Manager(httpClientFactory, _loggerFactory);
-            
-            if (flags.YamlConfig != null)
-            {
-                var config = flags.YamlConfig;
-
-                var baseTarget = config.Settings.Target
-                                 ?? throw new ArgumentException("YAML config is missing settings.target");
-                var phases = config.Settings.Phases
-                             ?? throw new ArgumentException("YAML config is missing settings.phases");
-                var getUrl = config.Scenarios?
-                                 .FirstOrDefault()?
-                                 .Flow?
-                                 .FirstOrDefault()?
-                                 .Get?
-                                 .Url
-                             ?? throw new ArgumentException(
-                                 "YAML config is missing scenarios[0].flow[0].get.url");
-
-                var endpoint = baseTarget + getUrl;
-
-                foreach (var phase in phases)
-                {
-                    // TODO: to fully support phases, I think we need to change some more code...
-                    // https://www.artillery.io/docs/guides/guides/test-script-reference
-                    settings = new Settings
-                    {
-                        Vu = phase.Vu,
-                        Duration = phase.Duration.HasValue ? TimeSpan.FromSeconds(phase.Duration.Value) : null,
-                        Target = endpoint,
-                        MaxRequests = phase.Requests > 0 ? phase.Requests : null,
-                        RequestTimeout = config.Settings.RequestTimeoutSeconds.HasValue
-                            ? TimeSpan.FromSeconds(config.Settings.RequestTimeoutSeconds.Value)
-                            : null
-                    };
-
-                    if (settings.Duration == null && settings.MaxRequests == null)
-                        throw new ArgumentException($"Phase '{phase.Name ?? "(unnamed)"}' must specify either duration or requests.");
-
-                    if (settings.Duration != null && settings.MaxRequests != null)
-                        throw new ArgumentException($"Phase '{phase.Name ?? "(unnamed)"}' cannot specify both duration and requests.");
-
-                    await RunPhaseTest(manager, settings);
-                }
-
-                if (flags.ReportSettings.Enabled)
-                    await WriteReportAsync(flags.ReportSettings, manager.Results, endpoint);
-            }
-            else
-            {
-                // when no yaml is used``
-                if (flags.AutoTuneMaxRps)
-                {
-                    if (!flags.Duration.HasValue)
-                        throw new ArgumentException("Auto-tune (-A) requires duration mode (-d HH:MM:SS)");
-                    if (flags.MaxRequests.HasValue)
-                        throw new ArgumentException("Auto-tune (-A) is not supported with max requests (-n)");
-                }
-
-                if (!flags.Duration.HasValue && !flags.MaxRequests.HasValue)
-                    throw new ArgumentException("You must specify either duration (-d HH:MM:SS) or max requests (-n <number>). ");
-
-                var target = flags.Target ?? throw new ArgumentException("Target URL is required (-t <url>)");
-
                 settings = new Settings
                 {
-                    JsonContent = flags.JsonContent,
-                    Vu = flags.Clients,
-                    Target = target,
-                    Method = flags.Method,
-                    Duration = flags.Duration,
-                    MaxRequests = flags.MaxRequests,
-                    Headers = flags.Headers,
-                    ConstantRps = flags.ConstantRps,
-                    RequestTimeout = flags.RequestTimeout,
-                    AutoTune = flags.AutoTuneMaxRps
-                        ? new AutoTuneSettings(
-                            MaxClients: flags.AutoTuneMaxClients ?? 256,
-                            Step: flags.AutoTuneStep ?? 5,
-                            Interval: flags.AutoTuneInterval ?? TimeSpan.FromSeconds(5),
-                            MaxErrorRatio: flags.AutoTuneMaxErrorRatio ?? 0.02f,
-                            MinImprovementRatio: 0.01f,
-                            MaxStallIntervals: 3)
+                    Vu = phase.Vu,
+                    Duration = phase.Duration.HasValue ? TimeSpan.FromSeconds(phase.Duration.Value) : null,
+                    Target = endpoint,
+                    MaxRequests = phase.Requests > 0 ? phase.Requests : null,
+                    RequestTimeout = config.Settings.RequestTimeoutSeconds.HasValue
+                        ? TimeSpan.FromSeconds(config.Settings.RequestTimeoutSeconds.Value)
                         : null
                 };
-                await RunNonPhaseTest(manager, settings);
 
-                if (flags.ReportSettings.Enabled)
-                    await WriteReportAsync(flags.ReportSettings, manager.Results, target);
+                if (settings.Duration == null && settings.MaxRequests == null)
+                    throw new InvalidOperationException($"Phase '{phase.Name ?? "(unnamed)"}' must specify either duration or requests.");
+
+                if (settings.Duration != null && settings.MaxRequests != null)
+                    throw new InvalidOperationException($"Phase '{phase.Name ?? "(unnamed)"}' cannot specify both duration and requests.");
+
+                await RunPhaseTest(manager, settings);
             }
+
+            if (flags.ReportSettings.Enabled)
+                await WriteReportAsync(flags.ReportSettings, manager.Results, endpoint);
         }
-        catch (ArgumentException e)
+        else
         {
-            Console.Error.WriteLine($"Error: {e.Message}");
-            Environment.ExitCode = 2;
+            // Non-YAML mode - config already validated by CommandLineParser
+            var target = flags.Target!;
+
+            settings = new Settings
+            {
+                JsonContent = flags.JsonContent,
+                Vu = flags.Clients,
+                Target = target,
+                Method = flags.Method,
+                Duration = flags.Duration,
+                MaxRequests = flags.MaxRequests,
+                Headers = flags.Headers,
+                ConstantRps = flags.ConstantRps,
+                RequestTimeout = flags.RequestTimeout,
+                AutoTune = flags.AutoTuneMaxRps
+                    ? new AutoTuneSettings(
+                        MaxClients: flags.AutoTuneMaxClients ?? 256,
+                        Step: flags.AutoTuneStep ?? 5,
+                        Interval: flags.AutoTuneInterval ?? TimeSpan.FromSeconds(5),
+                        MaxErrorRatio: flags.AutoTuneMaxErrorRatio ?? 0.02f,
+                        MinImprovementRatio: 0.01f,
+                        MaxStallIntervals: 3)
+                    : null
+            };
+            await RunNonPhaseTest(manager, settings);
+
+            if (flags.ReportSettings.Enabled)
+                await WriteReportAsync(flags.ReportSettings, manager.Results, target);
         }
     }
 

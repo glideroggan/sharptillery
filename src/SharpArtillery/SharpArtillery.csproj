@@ -18,7 +18,7 @@
     <PackageId>nyviken-sharptillery</PackageId>
     <Authors>Roger</Authors>
     <ToolCommandName>sharptillery</ToolCommandName>
-    <Version>0.3.6</Version>
+    <Version>0.4.0</Version>
     <PackageOutputPath>./nupkg</PackageOutputPath>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Description>Load testing tool with inspiration from:
@@ -32,6 +32,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.1" />
     <PackageReference Include="DocumentFormat.OpenXml" Version="3.3.0" />
     <PackageReference Include="Microsoft.AspNet.WebApi.Client" Version="6.0.0" />
     <PackageReference Include="microsoft.extensions.dependencyinjection" Version="10.0.1" />

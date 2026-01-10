@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using System.CommandLine;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SharpArtillery;
@@ -18,6 +19,5 @@ var host = Host.CreateDefaultBuilder(args)
     .Build();
 
 
-var program = host.Services.GetRequiredService<MainService>();
-await program.Main(args);
-// await host.RunAsync();
+var rootCommand = CommandLineParser.BuildRootCommand(host);
+return rootCommand.Parse(args).Invoke();
