@@ -16,7 +16,15 @@ if "%NUGET_API_KEY%"=="" (
   exit /b 1
 )
 
+REM Extract version from csproj
+for /f "tokens=2 delims=<>" %%V in ('findstr /r "<Version>[0-9]" .\src\SharpArtillery\SharpArtillery.csproj') do set "VERSION=%%V"
+if "%VERSION%"=="" (
+  echo Error: Could not extract version from SharpArtillery.csproj
+  exit /b 1
+)
+echo Building version %VERSION%...
+
 dotnet pack -c Release .\src\SharpArtillery\SharpArtillery.csproj
 if errorlevel 1 exit /b %errorlevel%
 
-dotnet nuget push .\src\SharpArtillery\nupkg\nyviken-sharptillery.0.3.6.nupkg --api-key %NUGET_API_KEY% --source https://api.nuget.org/v3/index.json
+dotnet nuget push .\src\SharpArtillery\nupkg\nyviken-sharptillery.%VERSION%.nupkg --api-key %NUGET_API_KEY% --source https://api.nuget.org/v3/index.json
