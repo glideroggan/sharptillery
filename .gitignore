@@ -353,7 +353,16 @@ MigrationBackup/
 .ionide/
 /info.txt
 /push.ps1
-src/SharpArtillery/report.html
 dotnet-tools.json
-report_*.html
 **/nupkg/**
+
+# Test reports and artifacts (generated during development/testing)
+*.html
+!src/**/*.html
+*.png
+data_url.txt
+nul
+
+# Test config files (local testing only)
+src/SharpArtillery/config-*-test.yaml
+src/SharpArtillery/config-test.yaml
