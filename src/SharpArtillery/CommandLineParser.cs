@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Parsing;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
@@ -107,7 +108,8 @@ internal static class CommandLineParser
         var autoTuneErrorOption = new Option<float>("--autotune-error", "-E")
         {
             Description = "Auto-tune max error ratio (e.g., 0.02 for 2%)",
-            DefaultValueFactory = _ => 0.02f
+            DefaultValueFactory = _ => 0.02f,
+            CustomParser = r => ParseFloat(r, "Auto-tune max error ratio (-E/--autotune-error)")
         };
 
         // Build root command
@@ -173,11 +175,13 @@ internal static class CommandLineParser
         Option<string?> yamlOption,
         Option<bool> autoTuneOption)
     {
+        // -n and -d count as given when typed, even with a value that cannot be parsed: the parser
+        // reports that value itself, and these checks must not add "missing" on top of it.
         // Mutual exclusion: -n and -d cannot be used together
         rootCommand.Validators.Add(result =>
         {
-            var hasRequests = result.GetValue(maxRequestsOption) != null;
-            var hasDuration = result.GetValue(durationOption) != null;
+            var hasRequests = Given(result, maxRequestsOption);
+            var hasDuration = Given(result, durationOption);
             if (hasRequests && hasDuration)
             {
                 result.AddError("Cannot use -n/--requests and -d/--duration together. Choose one.");
@@ -187,9 +191,9 @@ internal static class CommandLineParser
         // Require one of -n, -d, or -y
         rootCommand.Validators.Add(result =>
         {
-            var hasRequests = result.GetValue(maxRequestsOption) != null;
-            var hasDuration = result.GetValue(durationOption) != null;
-            var hasYaml = !string.IsNullOrEmpty(result.GetValue(yamlOption));
+            var hasRequests = Given(result, maxRequestsOption);
+            var hasDuration = Given(result, durationOption);
+            var hasYaml = !string.IsNullOrEmpty(ValueOrDefault(result, yamlOption));
             if (!hasRequests && !hasDuration && !hasYaml)
             {
                 result.AddError("Must specify -n/--requests, -d/--duration, or -y/--yaml.");
@@ -199,8 +203,8 @@ internal static class CommandLineParser
         // Target required unless YAML is provided
         rootCommand.Validators.Add(result =>
         {
-            var target = result.GetValue(targetOption);
-            var yaml = result.GetValue(yamlOption);
+            var target = ValueOrDefault(result, targetOption);
+            var yaml = ValueOrDefault(result, yamlOption);
             if (string.IsNullOrEmpty(target) && string.IsNullOrEmpty(yaml))
             {
                 result.AddError("Target URL (-t/--target) is required unless using YAML config (-y/--yaml).");
@@ -210,7 +214,7 @@ internal static class CommandLineParser
         // Validate target URL format
         rootCommand.Validators.Add(result =>
         {
-            var target = result.GetValue(targetOption);
+            var target = ValueOrDefault(result, targetOption);
             if (!string.IsNullOrEmpty(target))
             {
                 if (!Uri.TryCreate(target, UriKind.Absolute, out var uri))
@@ -228,9 +232,9 @@ internal static class CommandLineParser
         // Auto-tune requires duration mode
         rootCommand.Validators.Add(result =>
         {
-            var autoTune = result.GetValue(autoTuneOption);
-            var hasDuration = result.GetValue(durationOption) != null;
-            var hasRequests = result.GetValue(maxRequestsOption) != null;
+            var autoTune = ValueOrDefault(result, autoTuneOption);
+            var hasDuration = Given(result, durationOption);
+            var hasRequests = Given(result, maxRequestsOption);
             if (autoTune && !hasDuration)
             {
                 result.AddError("Auto-tune (-A/--autotune) requires duration mode (-d/--duration).");
@@ -264,7 +268,7 @@ internal static class CommandLineParser
     {
         rootCommand.Validators.Add(result =>
         {
-            var method = result.GetValue(methodOption);
+            var method = ValueOrDefault(result, methodOption);
             if (method != null && Array.FindIndex(HttpMethods, m => string.Equals(m, method, StringComparison.OrdinalIgnoreCase)) < 0)
             {
                 result.AddError($"Unsupported HTTP method: '{method}'. Use {string.Join(", ", HttpMethods)}.");
@@ -273,7 +277,7 @@ internal static class CommandLineParser
 
         rootCommand.Validators.Add(result =>
         {
-            var body = result.GetValue(bodyOption);
+            var body = ValueOrDefault(result, bodyOption);
             if (string.IsNullOrEmpty(body)) return;
             try
             {
@@ -287,7 +291,7 @@ internal static class CommandLineParser
 
         rootCommand.Validators.Add(result =>
         {
-            foreach (var header in result.GetValue(headerOption) ?? Array.Empty<string>())
+            foreach (var header in ValueOrDefault(result, headerOption) ?? Array.Empty<string>())
             {
                 var error = HeaderError(header);
                 if (error != null) result.AddError(error);
@@ -297,8 +301,7 @@ internal static class CommandLineParser
         rootCommand.Validators.Add(result =>
         {
             // The default ("html") is always valid, so only a value typed on the command line is checked.
-            if (!Typed(result, extensionOption)) return;
-            var extension = result.GetValue(extensionOption);
+            if (!Typed(result, extensionOption, out var extension)) return;
             if (!string.Equals(extension, "html", StringComparison.OrdinalIgnoreCase))
             {
                 result.AddError($"Unsupported report type: '{extension}'. Use html.");
@@ -309,28 +312,66 @@ internal static class CommandLineParser
         // a validator reads an option that was not typed as its zero value.
         rootCommand.Validators.Add(result =>
         {
-            if (Typed(result, autoTuneMaxOption) && result.GetValue(autoTuneMaxOption) < 1)
+            if (Typed(result, autoTuneMaxOption, out var maxClients) && maxClients < 1)
                 result.AddError("Auto-tune max clients (-M/--autotune-max) must be at least 1.");
-            if (Typed(result, autoTuneStepOption) && result.GetValue(autoTuneStepOption) < 1)
+            if (Typed(result, autoTuneStepOption, out var step) && step < 1)
                 result.AddError("Auto-tune step (-S/--autotune-step) must be at least 1.");
-            if (Typed(result, autoTuneIntervalOption) && result.GetValue(autoTuneIntervalOption) <= TimeSpan.Zero)
+            if (Typed(result, autoTuneIntervalOption, out var interval) && interval <= TimeSpan.Zero)
                 result.AddError("Auto-tune interval (-I/--autotune-interval) must be longer than zero.");
 
             // Written so that NaN, which compares false to everything, is rejected too.
-            if (Typed(result, autoTuneErrorOption))
-            {
-                var error = result.GetValue(autoTuneErrorOption);
-                if (!(error >= 0f && error <= 1f))
-                    result.AddError("Auto-tune max error ratio (-E/--autotune-error) must be between 0 and 1.");
-            }
+            if (Typed(result, autoTuneErrorOption, out var error) && !(error >= 0f && error <= 1f))
+                result.AddError("Auto-tune max error ratio (-E/--autotune-error) must be between 0 and 1.");
         });
     }
 
     /// <summary>
-    /// True when the option was given on the command line, false when its default is in use.
+    /// True when the option was given on the command line, false when it is absent or its default is in use.
     /// </summary>
-    private static bool Typed<T>(CommandResult result, Option<T> option) =>
+    private static bool Given(CommandResult result, Option option) =>
         result.GetResult(option) is OptionResult { Implicit: false };
+
+    /// <summary>
+    /// True, with the value, when the option was given on the command line and its value could be parsed.
+    /// The parser converts a value only when it is read, so a value that cannot be parsed makes GetValue
+    /// throw inside a validator; that value is skipped here, and the parser reports it as its own error.
+    /// </summary>
+    private static bool Typed<T>(CommandResult result, Option<T> option, out T? value)
+    {
+        value = default;
+        if (!Given(result, option)) return false;
+        try
+        {
+            value = result.GetValue(option);
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The typed value, or the type's default when the option was not typed or its value could not be parsed.
+    /// </summary>
+    private static T? ValueOrDefault<T>(CommandResult result, Option<T> option) =>
+        Typed(result, option, out var value) ? value : default;
+
+    /// <summary>
+    /// Reads a float with a dot as the decimal separator, as the help text shows it, and falls back to
+    /// the PC's own culture so a comma still works where that is the separator.
+    /// </summary>
+    private static float ParseFloat(ArgumentResult result, string label)
+    {
+        var token = result.Tokens.Count > 0 ? result.Tokens[^1].Value : "";
+        if (float.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) ||
+            float.TryParse(token, NumberStyles.Float, CultureInfo.CurrentCulture, out value))
+        {
+            return value;
+        }
+        result.AddError($"{label} is not a number: '{token}'.");
+        return default;
+    }
 
     private static ArtilleryConfig BuildConfig(
         ParseResult parseResult,

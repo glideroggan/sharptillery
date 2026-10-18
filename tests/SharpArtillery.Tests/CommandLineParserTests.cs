@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Microsoft.Extensions.Hosting;
 using Xunit;
@@ -220,5 +221,64 @@ public class CommandLineValidatorTests
         var errors = Errors("-t", "http://localhost/x", "-n", "1", "-H", header);
 
         Assert.NotEmpty(errors);
+    }
+
+    // Runs the parse with a Swedish culture, where the decimal separator is a comma.
+    private static List<string> ErrorsInSwedish(params string[] args)
+    {
+        var saved = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("sv-SE");
+        try
+        {
+            return Errors(args);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = saved;
+        }
+    }
+
+    // Audit of slice 3: a value that could not be converted crashed the parse with
+    // InvalidOperationException ("Cannot parse argument ...") because a validator read it.
+    [Theory]
+    [InlineData("-t", "http://localhost/x", "-d", "00:00:01", "-A", "-M", "abc")]
+    [InlineData("-t", "http://localhost/x", "-d", "00:00:01", "-A", "-S", "abc")]
+    [InlineData("-t", "http://localhost/x", "-d", "00:00:01", "-A", "-I", "bad")]
+    [InlineData("-t", "http://localhost/x", "-d", "00:00:01", "-A", "-E", "abc")]
+    [InlineData("-t", "http://localhost/x", "-n", "1", "-m", "abc", "-M", "abc")]
+    [InlineData("-t", "http://localhost/x", "-d", "bad")]
+    [InlineData("-t", "http://localhost/x", "-n", "abc")]
+    [InlineData("-t", "http://localhost/x", "-d", "bad", "-A")]
+    [Trait("slice", "3")]
+    public void A_value_that_cannot_be_parsed_is_a_parse_error_not_a_crash(params string[] args)
+    {
+        var errors = ErrorsInSwedish(args);
+
+        // The parser's own error names the value it could not read.
+        Assert.Contains(errors, e => e.Contains("'abc'") || e.Contains("'bad'"));
+    }
+
+    // A value that cannot be parsed gives its own error, not also one saying the option is missing.
+    [Theory]
+    [InlineData("-d", "bad")]
+    [InlineData("-n", "abc")]
+    [Trait("slice", "3")]
+    public void A_bad_requests_or_duration_value_does_not_also_report_it_missing(string option, string value)
+    {
+        var errors = ErrorsInSwedish("-t", "http://localhost/x", option, value);
+
+        Assert.DoesNotContain("Must specify -n/--requests, -d/--duration, or -y/--yaml.", errors);
+    }
+
+    // The help text gives the error ratio with a dot (0.02), so a dot works whatever the PC's culture.
+    [Theory]
+    [InlineData("0.05")]
+    [InlineData("0,05")]
+    [Trait("slice", "3")]
+    public void The_auto_tune_error_ratio_takes_a_dot_on_a_swedish_pc(string value)
+    {
+        var errors = ErrorsInSwedish("-t", "http://localhost/x", "-d", "00:00:01", "-A", "-E", value);
+
+        Assert.Empty(errors);
     }
 }
