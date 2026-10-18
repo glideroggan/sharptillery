@@ -13,8 +13,6 @@ namespace SharpArtillery;
 
 internal static class CommandLineParser
 {
-    private const string Version = "0.3.6";
-
     public static RootCommand BuildRootCommand(IHost host)
     {
         // Define all options with short and long forms
@@ -68,7 +66,7 @@ internal static class CommandLineParser
 
         var extensionOption = new Option<string>("--extension", "-e")
         {
-            Description = "Report type: html or excel",
+            Description = "Report type: html",
             DefaultValueFactory = _ => "html"
         };
 
