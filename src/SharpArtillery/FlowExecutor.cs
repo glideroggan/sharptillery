@@ -268,7 +268,7 @@ internal sealed partial class FlowExecutor
     /// Extracts a value from JSON using a simple JSONPath expression.
     /// Supports: $.field, $.nested.field, $.array[0].field
     /// </summary>
-    private static string? ExtractJsonPath(string json, string path)
+    internal static string? ExtractJsonPath(string json, string path)
     {
         if (string.IsNullOrEmpty(json) || string.IsNullOrEmpty(path)) return null;
         

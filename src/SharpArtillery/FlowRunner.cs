@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using SharpArtillery.Models;
@@ -21,7 +22,12 @@ internal sealed class FlowRunner : IDisposable
     private readonly TimeSpan _requestTimeout;
     private readonly Stopwatch _globalTimer;
     private readonly ConcurrentQueue<DataPoint> _resultQueue;
-    
+
+    /// <summary>
+    /// Handler shared by every VU instead of their own; null (the default) gives each VU its own.
+    /// </summary>
+    private readonly HttpMessageHandler? _handler;
+
     private readonly List<VirtualUser> _virtualUsers = new();
     private readonly List<Task> _vuTasks = new();
     private CancellationTokenSource _cts = new();
@@ -74,13 +80,15 @@ internal sealed class FlowRunner : IDisposable
         string baseTarget,
         TimeSpan requestTimeout,
         Stopwatch globalTimer,
-        ConcurrentQueue<DataPoint>? resultQueue = null)
+        ConcurrentQueue<DataPoint>? resultQueue = null,
+        HttpMessageHandler? handler = null)
     {
         _flowSteps = flowSteps ?? throw new ArgumentNullException(nameof(flowSteps));
         _baseTarget = baseTarget ?? throw new ArgumentNullException(nameof(baseTarget));
         _requestTimeout = requestTimeout;
         _globalTimer = globalTimer;
         _resultQueue = resultQueue ?? new ConcurrentQueue<DataPoint>();
+        _handler = handler;
     }
 
     /// <summary>
@@ -100,7 +108,8 @@ internal sealed class FlowRunner : IDisposable
                 vuIndex: i,
                 baseTarget: _baseTarget,
                 requestTimeout: _requestTimeout,
-                phaseName: PhaseName);
+                phaseName: PhaseName,
+                handler: _handler);
             _virtualUsers.Add(vu);
         }
     }

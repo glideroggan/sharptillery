@@ -40,16 +40,29 @@ internal sealed class VirtualUser : IDisposable
         int vuIndex,
         string baseTarget,
         TimeSpan? requestTimeout = null,
-        string? phaseName = null)
+        string? phaseName = null,
+        HttpMessageHandler? handler = null)
     {
         _vuIndex = vuIndex;
         BaseTarget = baseTarget.TrimEnd('/');
         PhaseName = phaseName;
         RequestTimeout = requestTimeout ?? TimeSpan.FromSeconds(5);
-        
+
         // Each VU gets its own CookieContainer for session persistence
         _cookieContainer = new CookieContainer();
-        var handler = new HttpClientHandler
+
+        // A handler passed in (tests use a stub) is owned by the caller and may be shared by
+        // several VUs, so the VU does not dispose it; it also brings its own cookie handling.
+        if (handler != null)
+        {
+            _httpClient = new HttpClient(handler, disposeHandler: false)
+            {
+                Timeout = RequestTimeout
+            };
+            return;
+        }
+
+        var defaultHandler = new HttpClientHandler
         {
             CookieContainer = _cookieContainer,
             UseCookies = true,
@@ -57,8 +70,8 @@ internal sealed class VirtualUser : IDisposable
             MaxConnectionsPerServer = 100,
             AutomaticDecompression = DecompressionMethods.All
         };
-        
-        _httpClient = new HttpClient(handler)
+
+        _httpClient = new HttpClient(defaultHandler)
         {
             Timeout = RequestTimeout
         };

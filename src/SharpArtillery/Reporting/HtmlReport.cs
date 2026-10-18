@@ -92,7 +92,7 @@ internal static class HtmlReport
         return JsonSerializer.Serialize(buckets, Options);
     }
 
-    private static string PrepareSummaryData(List<DataPoint> requestData, string url)
+    internal static string PrepareSummaryData(List<DataPoint> requestData, string url)
     {
         var total = requestData.Count;
         var errors = requestData.Count(d => d.IsError());

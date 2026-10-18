@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -141,12 +142,14 @@ public sealed class MainService
     /// <summary>
     /// Runs flow mode where each VU executes the full flow sequence with state.
     /// </summary>
-    private static async Task RunFlowModeAsync(
+    /// <param name="handler">Handler shared by every VU (tests pass a stub); null gives each VU its own.</param>
+    internal static async Task RunFlowModeAsync(
         List<FlowStep> flowSteps,
         string baseTarget,
         TimeSpan requestTimeout,
         List<Phase> phases,
-        ReportSettings reportSettings)
+        ReportSettings reportSettings,
+        HttpMessageHandler? handler = null)
     {
         Console.Out.WriteLine($"[Flow Mode] Detected {flowSteps.Count} flow steps - using per-VU flow execution");
         
@@ -167,7 +170,7 @@ public sealed class MainService
             
             Console.Out.WriteLine($"\n=== {phaseLabel} started (VU: {phase.Vu}, Duration: {phase.Duration ?? 0}s, Requests: {phase.Requests ?? 0}) ===");
             
-            using var runner = new FlowRunner(flowSteps, baseTarget, requestTimeout, globalTimer);
+            using var runner = new FlowRunner(flowSteps, baseTarget, requestTimeout, globalTimer, handler: handler);
             runner.PhaseName = phase.Name;
             runner.Prepare(phase.Vu);
             runner.Start(maxRequestsPerVu, duration);

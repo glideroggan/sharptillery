@@ -285,20 +285,7 @@ internal static class CommandLineParser
         }
 
         // Parse headers
-        var headers = parseResult.GetValue(headerOption);
-        if (headers != null)
-        {
-            foreach (var header in headers)
-            {
-                var colonIndex = header.IndexOf(':');
-                if (colonIndex > 0)
-                {
-                    var name = header[..colonIndex].Trim();
-                    var value = header[(colonIndex + 1)..].Trim();
-                    config.Headers[name] = value;
-                }
-            }
-        }
+        ParseHeaders(parseResult.GetValue(headerOption), config.Headers);
 
         // Parse output settings
         var output = parseResult.GetValue(outputOption);
@@ -321,5 +308,25 @@ internal static class CommandLineParser
         }
 
         return config;
+    }
+
+    /// <summary>
+    /// Adds each <c>Name:Value</c> header to <paramref name="target"/>, splitting at the first colon
+    /// and trimming both parts. An entry without a name before the colon is skipped.
+    /// </summary>
+    internal static void ParseHeaders(IEnumerable<string>? headers, Dictionary<string, string> target)
+    {
+        if (headers == null) return;
+
+        foreach (var header in headers)
+        {
+            var colonIndex = header.IndexOf(':');
+            if (colonIndex > 0)
+            {
+                var name = header[..colonIndex].Trim();
+                var value = header[(colonIndex + 1)..].Trim();
+                target[name] = value;
+            }
+        }
     }
 }
