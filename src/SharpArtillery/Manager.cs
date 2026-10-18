@@ -193,12 +193,22 @@ internal sealed class Manager : IDisposable
         return new ValueTask(Task.CompletedTask);
     }
 
+    /// <summary>
+    /// Results the clients can have in the channel before a write waits for the reader. The reader
+    /// drains at memory speed, so the backlog is normally a few items; the bound is there because an
+    /// unbounded channel doubles its queue segment every time one fills, however fast it is drained,
+    /// and that array of structs (a million slots after a long run) would stay alive into the report.
+    /// </summary>
+    private const int ResultBacklog = 65_536;
+
     private static Channel<DataPoint> CreateResultChannel() =>
-        Channel.CreateUnbounded<DataPoint>(new UnboundedChannelOptions
+        Channel.CreateBounded<DataPoint>(new BoundedChannelOptions(ResultBacklog)
         {
-            // The run loop is the only reader, which lets the channel skip its reader lock.
             SingleReader = true,
-            SingleWriter = false
+            SingleWriter = false,
+            // A writer waits for room rather than losing the result; the run loop keeps reading
+            // until the last client has stopped, so the wait always ends.
+            FullMode = BoundedChannelFullMode.Wait
         });
 
     /// <summary>

@@ -135,7 +135,9 @@ internal sealed class Client
                 requestResults.StartTime = requestResults.EndTime - latency;
                 requestResults.RequestSentTime = requestResults.StartTime;
 
-                results.TryWrite(requestResults);
+                // No token here: a result that is already measured is kept even when the phase has
+                // just ended, and the manager reads until this client has stopped.
+                await results.WriteAsync(requestResults, CancellationToken.None).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
