@@ -80,15 +80,7 @@ public sealed class MainService
 
                 foreach (var phase in phases)
                 {
-                    settings = flags.ToSettings(
-                        targetOverride: endpoint,
-                        vuOverride: phase.Vu,
-                        durationOverride: phase.Duration.HasValue ? TimeSpan.FromSeconds(phase.Duration.Value) : null,
-                        maxRequestsOverride: phase.Requests.HasValue && phase.Requests > 0 ? phase.Requests : null,
-                        phaseName: phase.Name,
-                        methodOverride: method,
-                        headersOverride: spec.Headers,
-                        jsonContentOverride: spec.Json);
+                    settings = BlastPhaseSettings(flags, config, phase, endpoint, method, spec);
 
                     settings.Validate($"Phase '{phase.Name ?? "(unnamed)"}'");
 
@@ -112,6 +104,35 @@ public sealed class MainService
         }
     }
     
+    /// <summary>
+    /// The settings of one blast-mode phase. The YAML <c>settings.timeout</c> replaces the
+    /// <c>-T</c> timeout when it is set, and the step's <c>body</c> is sent when it has no <c>json</c>.
+    /// </summary>
+    internal static Settings BlastPhaseSettings(
+        ArtilleryConfig flags,
+        ConfigRoot config,
+        Phase phase,
+        string endpoint,
+        string method,
+        RequestSpec spec)
+    {
+        var settings = flags.ToSettings(
+            targetOverride: endpoint,
+            vuOverride: phase.Vu,
+            durationOverride: phase.Duration.HasValue ? TimeSpan.FromSeconds(phase.Duration.Value) : null,
+            maxRequestsOverride: phase.Requests.HasValue && phase.Requests > 0 ? phase.Requests : null,
+            phaseName: phase.Name,
+            methodOverride: method,
+            headersOverride: spec.Headers,
+            jsonContentOverride: spec.Json,
+            rawBodyOverride: spec.Body);
+
+        if (config.Settings.GetTimeout() is { } timeoutSeconds)
+            settings.RequestTimeout = TimeSpan.FromSeconds(timeoutSeconds);
+
+        return settings;
+    }
+
     /// <summary>
     /// Determines if flow mode is required based on flow complexity.
     /// Flow mode is needed when:

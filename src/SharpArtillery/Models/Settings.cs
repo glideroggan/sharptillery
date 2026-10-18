@@ -18,7 +18,12 @@ internal sealed class Settings
     public string? Method { get; init; }
     public Dictionary<string,string>? Headers { get; set; }
     public object? JsonContent { get; set; }
-    
+
+    /// <summary>
+    /// A body sent as typed (YAML <c>body:</c>), used when there is no JSON body.
+    /// </summary>
+    public string? RawBody { get; set; }
+
     /// <summary>
     /// Name of the current phase (for multi-phase YAML tests).
     /// </summary>

@@ -316,9 +316,9 @@ public class ManagerTests
         Assert.Equal(4, stub.CallCount);
     }
 
-    // Red for slice 3: `-H Content-Type:...` throws "Misused header name" while the request
-    // is built, because Content-* headers belong on the content, not the request.
-    [Fact(Skip = "slice 3")]
+    // `-H Content-Type:...` used to throw "Misused header name" while the request was built,
+    // because Content-* headers belong on the content, not the request.
+    [Fact]
     [Trait("slice", "3")]
     public async Task A_content_type_header_does_not_crash_the_run()
     {
@@ -338,13 +338,55 @@ public class ManagerTests
 
         Assert.Equal(1, stub.CallCount);
     }
+
+    [Fact]
+    [Trait("slice", "3")]
+    public void Content_headers_go_on_the_content_and_the_rest_on_the_request()
+    {
+        var template = new RequestTemplate(new Settings
+        {
+            Target = Target,
+            Method = "POST",
+            Headers = new Dictionary<string, string>
+            {
+                ["X-Api-Key"] = "abc",
+                ["Content-Type"] = "application/vnd.test+json"
+            },
+            JsonContent = new { a = 1 }
+        });
+
+        using var req = template.Build();
+
+        Assert.Equal("abc", req.Headers.GetValues("X-Api-Key").Single());
+        // Contains() throws for a content header name on request headers, so enumerate instead.
+        Assert.DoesNotContain(req.Headers, h => h.Key == "Content-Type");
+        Assert.Equal("application/vnd.test+json", req.Content!.Headers.ContentType!.ToString());
+    }
+
+    // A content header with no body still reaches the server, on an empty body.
+    [Fact]
+    [Trait("slice", "3")]
+    public void A_content_header_without_a_body_is_sent_on_an_empty_body()
+    {
+        var template = new RequestTemplate(new Settings
+        {
+            Target = Target,
+            Method = "GET",
+            Headers = new Dictionary<string, string> { ["Content-Type"] = "text/plain" }
+        });
+
+        using var req = template.Build();
+
+        Assert.NotNull(req.Content);
+        Assert.Equal("text/plain", req.Content!.Headers.ContentType!.MediaType);
+    }
 }
 
 public class CustomHttpClientFactoryTests
 {
-    // Red for slice 3: the factory puts every -H header on DefaultRequestHeaders, and
-    // Content-Type throws "Misused header name" there, so the tool crashes at start.
-    [Fact(Skip = "slice 3")]
+    // The factory used to put every -H header on DefaultRequestHeaders, and Content-Type threw
+    // "Misused header name" there, so the tool crashed at start.
+    [Fact]
     [Trait("slice", "3")]
     public void A_content_type_header_does_not_crash_the_factory()
     {
@@ -356,6 +398,27 @@ public class CustomHttpClientFactoryTests
         var exception = Record.Exception(() => new CustomHttpClientFactory(config).Dispose());
 
         Assert.Null(exception);
+    }
+
+    [Fact]
+    [Trait("slice", "3")]
+    public void Content_headers_are_not_put_on_the_shared_client()
+    {
+        var config = new ArtilleryConfig
+        {
+            Headers = new Dictionary<string, string>
+            {
+                ["Content-Type"] = "application/json",
+                ["X-Api-Key"] = "abc"
+            }
+        };
+
+        using var factory = new CustomHttpClientFactory(config);
+        var client = factory.CreateClient();
+
+        // Contains() throws for a content header name, so enumerate instead.
+        Assert.DoesNotContain(client.DefaultRequestHeaders, h => h.Key == "Content-Type");
+        Assert.Equal(["abc"], client.DefaultRequestHeaders.GetValues("X-Api-Key"));
     }
 
     [Fact]

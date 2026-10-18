@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -517,6 +518,13 @@ internal sealed class RequestTemplate
     private readonly Uri _target;
     private readonly KeyValuePair<string, string>[] _headers;
     private readonly object? _jsonContent;
+    private readonly string? _rawBody;
+
+    /// <summary>
+    /// <c>Content-*</c> headers describe the body, so they go on the request's content, not on the request.
+    /// </summary>
+    internal static bool IsContentHeader(string name) =>
+        name.StartsWith("Content-", StringComparison.OrdinalIgnoreCase);
 
     public RequestTemplate(Settings settings)
     {
@@ -536,18 +544,42 @@ internal sealed class RequestTemplate
             UriKind.RelativeOrAbsolute);
         _headers = settings.Headers is { Count: > 0 } headers ? [.. headers] : [];
         _jsonContent = settings.JsonContent;
+        _rawBody = settings.RawBody;
     }
 
     public HttpRequestMessage Build()
     {
         var req = new HttpRequestMessage(_method, _target);
         foreach (var (name, value) in _headers)
-            req.Headers.Add(name, value);
+        {
+            if (!IsContentHeader(name))
+                req.Headers.Add(name, value);
+        }
 
         if (_jsonContent != null)
         {
             req.Content = JsonContent.Create(_jsonContent);
             req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        }
+        else if (_rawBody != null)
+        {
+            req.Content = new StringContent(_rawBody);
+        }
+        else if (_headers.Any(h => IsContentHeader(h.Key)))
+        {
+            // A content header with no body still reaches the server, on an empty body.
+            req.Content = new ByteArrayContent(Array.Empty<byte>());
+        }
+
+        // Set after the default content type, so a -H Content-Type replaces it.
+        if (req.Content != null)
+        {
+            foreach (var (name, value) in _headers)
+            {
+                if (!IsContentHeader(name)) continue;
+                req.Content.Headers.Remove(name);
+                req.Content.Headers.Add(name, value);
+            }
         }
 
         return req;
