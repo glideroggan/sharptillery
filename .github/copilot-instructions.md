@@ -7,7 +7,7 @@
 
 ## Project overview
 
-Sharptillery is a .NET global tool (PackageId `nyviken-sharptillery`, command `sharptillery`) that load-tests a single HTTP endpoint and produces console stats and an optional HTML report.
+Sharptillery is a .NET global tool (PackageId `nyviken-sharptillery`, command `sharptillery`) that load-tests HTTP endpoints and produces console stats and an optional HTML report. Flags mode targets one endpoint; YAML mode runs phases and, optionally, multi-step per-user flows.
 
 Core flow:
 - CLI args/YAML are parsed into `ArtilleryConfig` in `src/SharpArtillery/CommandLineParser.cs` (`BuildConfig`; YAML is loaded by `YamlHelper.ReadYaml`).
@@ -40,6 +40,6 @@ Core flow:
 ## Project-specific coding conventions and gotchas
 
 - Target framework is `net10.0` with `LangVersion=preview` and `ImplicitUsings=disable` (see `src/SharpArtillery/SharpArtillery.csproj`), add explicit `using` directives.
-- `CustomHttpClientFactory` typically returns a shared `HttpClient` instance (FactoryEnum `Roger`). Do not dispose per request, dispose the factory.
-- YAML “phases” currently run sequentially but `Manager.RunTest()` clears `_responseData` at start, so phase mode does not accumulate results across phases unless you change the storage/aggregation strategy.
-- CLI validation uses `ArgumentException`; `MainService.Main` catches these, prints to stderr, and sets `Environment.ExitCode = 2`. Follow this pattern for new flags/validation.
+- `CustomHttpClientFactory.CreateClient()` returns one shared `HttpClient` for all virtual users. Do not dispose it per request; the factory owns it and disposes it.
+- YAML phases run one after another and their results accumulate: `Manager.RunTest()` does not clear `_responseData` (`src/SharpArtillery/Manager.cs`), and flow mode collects every phase's results in `MainService.RunFlowModeAsync` (`src/SharpArtillery/MainService.cs`).
+- Validation throws `ArgumentException` (`Settings.Validate`, auto-tune checks in `Manager.cs`). Neither `Program.cs` nor `CommandLineParser.cs` catches these or sets an exit code, so a new check needs its own handling if it must exit cleanly.
