@@ -24,7 +24,6 @@ Server and container stats (CPU, memory, GC, thread pool, connection counts) are
 
 ## YAML scenario phases and flows
 
-- [ ] Expand YAML support from "single GET" to full multi-step per-client flows, for example `get`, `post`, and sequential steps that each virtual user executes in order (`src/SharpArtillery/Models/Yaml.cs`, `src/SharpArtillery/MainService.cs`, `src/SharpArtillery/Client.cs`).
 - [ ] Support multiple `flow` entries and produce one request per flow step per virtual user, not only `flow[0]`.
 - [ ] Define how `settings.phases` maps to runtime, for example per-phase VUs, per-phase duration or requests, and phase transitions without losing results.
 - [ ] Tag each `DataPoint` with phase metadata (phase index and or name) so reports can group by phase.
@@ -83,6 +82,10 @@ Server and container stats (CPU, memory, GC, thread pool, connection counts) are
 - **DEAD-004: Phase accumulation not implemented.** `MainService.cs:103-104` has a TODO: phases do not accumulate results, each phase overwrites. Related to INV-001.
 
 ## Done
+
+### YAML scenarios
+
+- [x] Multi-step per-client YAML flows (`get`, `post`, `put`, `delete` and `think` steps) run in order by `FlowRunner`.
 
 ### Client-side metrics
 

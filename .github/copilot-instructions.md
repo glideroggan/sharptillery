@@ -10,7 +10,7 @@
 Sharptillery is a .NET global tool (PackageId `nyviken-sharptillery`, command `sharptillery`) that load-tests a single HTTP endpoint and produces console stats and an optional HTML report.
 
 Core flow:
-- CLI args/YAML are parsed into `ArtilleryConfig` in `src/SharpArtillery/FlagParser.cs` (`ProgramSettings.HandleConfigsAndSettings`).
+- CLI args/YAML are parsed into `ArtilleryConfig` in `src/SharpArtillery/CommandLineParser.cs` (`BuildConfig`; YAML is loaded by `YamlHelper.ReadYaml`).
 - `src/SharpArtillery/MainService.cs` maps config into runtime `Settings` and orchestrates test execution.
 - `src/SharpArtillery/Manager.cs` owns the run loop: it enqueues `HttpRequestMessage` instances, starts clients, aggregates `DataPoint` results, and exposes `GetProgress` for periodic progress output.
 - `src/SharpArtillery/Client.cs` is the worker that dequeues requests and sends them using `HttpClient`, then enqueues `DataPoint` to `Manager.ResponseMessageQueue`.
@@ -25,12 +25,12 @@ Core flow:
 
 ## Configuration conventions
 
-- “Flags mode” (no YAML): `-t` target URL, `-c` virtual users, and exactly one of `-n` (max requests) or `-d` (duration). See help text in `src/SharpArtillery/FlagParser.cs`.
-- “YAML mode”: `-y <path>` loads YAML via YamlDotNet (`src/SharpArtillery/Models/Yaml.cs`). Current implementation only reads:
-	- `settings.target`
-	- `settings.phases[*]`
-	- `scenarios[0].flow[0].get.url`
-	Use `src/SharpArtillery/config.yaml` as the canonical example.
+- “Flags mode” (no YAML): `-t` target URL, `-c` virtual users, and exactly one of `-n` (max requests) or `-d` (duration). See help text in `src/SharpArtillery/CommandLineParser.cs`.
+- “YAML mode”: `-y <path>` loads YAML via YamlDotNet (`src/SharpArtillery/Models/Yaml.cs`). `MainService.Run` reads:
+	- `settings.target` (base URL)
+	- phases: top-level `phases` (or legacy `settings.phases`), each with `vu` and `duration` or `requests`
+	- `scenarios[0].flow`: when there are several steps, a think step, or captures, every step runs in order per VU (flow mode, `FlowRunner`). A single GET without captures runs in blast mode.
+	Canonical examples: `src/SharpArtillery/config.yaml` (single GET) and `src/SharpArtillery/config-flow-test.yaml` (flow with think).
 
 ## Reporting and results
 
