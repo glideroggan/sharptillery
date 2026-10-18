@@ -51,18 +51,18 @@ No open items: the YAML phase and flow work listed here is done, see Done.
 
 ### P2 - Nice to have
 
-- **AP-002: Thread instead of Task.** `MainService.cs:87,111` uses `new Thread(manager.RunTest)` when `Task.Run()` would be cleaner and more idiomatic. Impact: less composable, harder to await properly.
-- **AP-004: Mixing concerns in MainService.Run().** `MainService.cs:29-82` handles YAML parsing, validation, phase loops, non-phase runs and report writing in one method. Suggested fix: extract smaller focused methods or classes.
+- **AP-002: Thread instead of Task.** `MainService.RunPhaseTest` and `MainService.RunNonPhaseTest` use `new Thread(manager.RunTest)` when `Task.Run()` would be cleaner and more idiomatic. Impact: less composable, harder to await properly.
+- **AP-004: Mixing concerns in MainService.Run().** `MainService.Run` gets an already-parsed `flags.YamlConfig` (YAML is read in `CommandLineParser.BuildConfig`), but it still handles config checks, the blast and flow mode branches, phase loops, non-phase runs and report writing in one method. Suggested fix: extract smaller focused methods or classes.
 - **AP-006: Console output scattered everywhere.** `Manager.cs`, `MainService.cs`, `Client.cs` use `Console.Out.WriteLine` instead of ILogger. Impact: hard to control verbosity, no log levels.
-- **AP-007: Blocking WaitOne() in async context.** `Client.cs:35` blocks the thread in an `async Task` method. Suggested fix: `ManualResetEventSlim` with async waiting or `TaskCompletionSource`.
+- **AP-007: Blocking WaitOne() in async context.** `Client.RunAsync` blocks the thread on `_manager.StartClients.WaitOne()` in an `async Task` method. Suggested fix: `ManualResetEventSlim` with async waiting or `TaskCompletionSource`.
 
 ### P3 - Cleanup (low priority)
 
 - **BUG-001: IDisposable cosmetic issue.** `Manager.cs` implements `IDisposable`, but this is a CLI tool and the OS reclaims resources on exit anyway. Not a real bug.
-- **BUG-002: Misleading volatile keyword.** `Manager.cs:21` `volatile List<DataPoint>`: all writes happen on one thread and reads happen after completion. Suggested fix: remove `volatile`, optionally make `Results` return a copy.
-- **BUG-003: Double DateTime.UtcNow.** `Client.cs:110-111` sets `RequestReceivedTime` and `EndTime` with two separate calls. Impact: minor microsecond timing inaccuracy.
-- **SIMP-006: TopupSettings nested in Manager.** `Manager.cs:57` could move to `Models/` for clarity.
-- **DEAD-002: Excel reporting disabled.** `MainService.cs:146-148` throws `NotImplementedException` for the `.xlsx` extension. Decision needed: implement or remove the option.
+- **BUG-002: Misleading volatile keyword.** `Manager._responseData` is declared `volatile List<DataPoint>`: all writes happen on one thread and reads happen after completion. Suggested fix: remove `volatile`, optionally make `Results` return a copy.
+- **BUG-003: Double DateTime.UtcNow.** `Client.RunAsync` sets `RequestReceivedTime` and `EndTime` with two separate `DateTime.UtcNow` calls. Impact: minor microsecond timing inaccuracy.
+- **SIMP-006: TopupSettings nested in Manager.** `Manager.TopupSettings` (nested record) could move to `Models/` for clarity.
+- **DEAD-002: Excel reporting disabled.** `MainService.WriteReportAsync` throws `NotImplementedException` for the `.xlsx` extension. Decision needed: implement or remove the option.
 
 ## Done
 
@@ -109,4 +109,4 @@ No open items: the YAML phase and flow work listed here is done, see Done.
 | BUG-005 | Renamed `Done` to `_done` in Manager |
 | DEAD-003 | Removed unused `_httpClientFactory` field (part of SIMP-002) |
 | DEAD-004 | Phase results accumulate across phases; the phase-overwrite TODO is gone (see the YAML scenarios entries above) |
-| INV-001 | Multi-phase YAML checked against a local testapi with `config.yaml` (target changed to port 8080): two phases ran end to end, the report total (25264) equals the sum of the phases (7926 + 17338), the HTML has a Phase Breakdown section, and the file parses |
+| INV-001 | Multi-phase YAML checked against a local testapi with `config.yaml`: two phases ran end to end, the report total (25264) equals the sum of the phases (7926 + 17338), the HTML has a Phase Breakdown section, and the file parses |

@@ -40,6 +40,8 @@ Core flow:
 ## Project-specific coding conventions and gotchas
 
 - Target framework is `net10.0` with `LangVersion=preview` and `ImplicitUsings=disable` (see `src/SharpArtillery/SharpArtillery.csproj`), add explicit `using` directives.
-- `CustomHttpClientFactory.CreateClient()` returns one shared `HttpClient` for all virtual users. Do not dispose it per request; the factory owns it and disposes it.
+- Blast mode: `Client`s share the one `HttpClient` that `CustomHttpClientFactory.CreateClient()` returns. Do not dispose it per request. `CustomHttpClientFactory` implements `IDisposable`, but `MainService.Run` creates it without `using` and nothing disposes it.
+- Flow mode: `CustomHttpClientFactory` is not used. Each `VirtualUser` builds its own `HttpClient` with its own cookie jar (`src/SharpArtillery/VirtualUser.cs`), and `VirtualUser.Dispose` disposes that client.
 - YAML phases run one after another and their results accumulate: `Manager.RunTest()` does not clear `_responseData` (`src/SharpArtillery/Manager.cs`), and flow mode collects every phase's results in `MainService.RunFlowModeAsync` (`src/SharpArtillery/MainService.cs`).
-- Validation throws `ArgumentException` (`Settings.Validate`, auto-tune checks in `Manager.cs`). Neither `Program.cs` nor `CommandLineParser.cs` catches these or sets an exit code, so a new check needs its own handling if it must exit cleanly.
+- `Settings.Validate` throws `ArgumentException`, and neither `Program.cs` nor `CommandLineParser.cs` catches it. The auto-tune `ArgumentException`s in `Manager.RunAutoTuneAsync` are thrown inside the `Task.Run` that `Manager.RunTest` starts, and the `catch` around `autoTuneTask.Wait` in `RunTest` swallows them, so they never reach the user. The run goes on without auto-tune and prints no error about it (the "AutoTune enabled" line still prints first).
+- New CLI flag checks should follow the System.CommandLine pattern in `CommandLineParser.AddValidators` (`rootCommand.Validators.Add(result => ... result.AddError(...))`, `src/SharpArtillery/CommandLineParser.cs`), so the error reaches the user through the parser.
