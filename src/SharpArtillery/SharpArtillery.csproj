@@ -51,10 +51,6 @@
     <None Update="config.yaml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <!-- Personal local target file: kept in the repo, but out of the build output, which the tool package ships as its payload. -->
-    <None Update="config_local.yaml">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 
   <ItemGroup>
