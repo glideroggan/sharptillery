@@ -12,6 +12,8 @@
 
   <ItemGroup>
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.0.1" />
+    <!-- Pinned directly so the transitive Swashbuckle dependency cannot pull in a vulnerable 2.x. -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
   </ItemGroup>
 
 </Project>
