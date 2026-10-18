@@ -24,11 +24,7 @@ Server and container stats (CPU, memory, GC, thread pool, connection counts) are
 
 ## YAML scenario phases and flows
 
-- [ ] Support multiple `flow` entries and produce one request per flow step per virtual user, not only `flow[0]`.
-- [ ] Define how `settings.phases` maps to runtime, for example per-phase VUs, per-phase duration or requests, and phase transitions without losing results.
-- [ ] Tag each `DataPoint` with phase metadata (phase index and or name) so reports can group by phase.
-- [ ] Persist or aggregate results across phases instead of clearing or overwriting (`src/SharpArtillery/Manager.cs`, `src/SharpArtillery/MainService.cs`).
-- [ ] Add per-phase console progress output and optional per-phase sections in the HTML report (`src/SharpArtillery/Reporting/HtmlReport.cs`).
+No open items: the YAML phase and flow work listed here is done, see Done.
 
 ## Correctness and safety
 
@@ -53,18 +49,6 @@ Server and container stats (CPU, memory, GC, thread pool, connection counts) are
 
 ## Code review actions
 
-### Investigation
-
-#### INV-001: Verify YAML phase functionality
-- **Location**: `MainService.cs`, `config.yaml`
-- **Severity**: Medium
-- **Description**: Need to verify that YAML configuration with phases is actually working correctly.
-- **Questions**:
-  - Does multi-phase execution work end-to-end?
-  - Are results aggregated correctly across phases?
-  - Does the HTML report show phase-separated data?
-  - Is `config.yaml` a valid test case?
-
 ### P2 - Nice to have
 
 - **AP-002: Thread instead of Task.** `MainService.cs:87,111` uses `new Thread(manager.RunTest)` when `Task.Run()` would be cleaner and more idiomatic. Impact: less composable, harder to await properly.
@@ -79,13 +63,17 @@ Server and container stats (CPU, memory, GC, thread pool, connection counts) are
 - **BUG-003: Double DateTime.UtcNow.** `Client.cs:110-111` sets `RequestReceivedTime` and `EndTime` with two separate calls. Impact: minor microsecond timing inaccuracy.
 - **SIMP-006: TopupSettings nested in Manager.** `Manager.cs:57` could move to `Models/` for clarity.
 - **DEAD-002: Excel reporting disabled.** `MainService.cs:146-148` throws `NotImplementedException` for the `.xlsx` extension. Decision needed: implement or remove the option.
-- **DEAD-004: Phase accumulation not implemented.** `MainService.cs:103-104` has a TODO: phases do not accumulate results, each phase overwrites. Related to INV-001.
 
 ## Done
 
 ### YAML scenarios
 
 - [x] Multi-step per-client YAML flows (`get`, `post`, `put`, `delete` and `think` steps) run in order by `FlowRunner`.
+- [x] Multiple flow steps per scenario: every step runs per virtual user, not only `flow[0]`.
+- [x] `settings.phases` maps to runtime: each phase sets its own VUs, duration or requests (`src/SharpArtillery/MainService.cs`).
+- [x] Each `DataPoint` carries its phase name (`PhaseName`, `src/SharpArtillery/Client.cs`, `src/SharpArtillery/FlowExecutor.cs`), so reports group by phase.
+- [x] Results accumulate across phases instead of being overwritten (`Manager.RunTest()` keeps `_responseData`; flow mode collects every phase in `MainService.RunFlowModeAsync`).
+- [x] Per-phase console progress and totals (`src/SharpArtillery/MainService.cs`), and a per-phase breakdown in the HTML report (`src/SharpArtillery/Reporting/HtmlReport.cs`).
 
 ### Client-side metrics
 
@@ -120,3 +108,5 @@ Server and container stats (CPU, memory, GC, thread pool, connection counts) are
 | BUG-004 | Removed stale pragma and unused `_logger` from MainService |
 | BUG-005 | Renamed `Done` to `_done` in Manager |
 | DEAD-003 | Removed unused `_httpClientFactory` field (part of SIMP-002) |
+| DEAD-004 | Phase results accumulate across phases; the phase-overwrite TODO is gone (see the YAML scenarios entries above) |
+| INV-001 | Multi-phase YAML checked against a local testapi with `config.yaml` (target changed to port 8080): two phases ran end to end, the report total (25264) equals the sum of the phases (7926 + 17338), the HTML has a Phase Breakdown section, and the file parses |
