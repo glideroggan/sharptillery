@@ -8,7 +8,7 @@ Sharptillery is a command-line HTTP load testing tool for .NET. It sends request
 
 ## Install
 
-Requires the .NET 10 SDK or runtime.
+The .NET 10 SDK is needed to install the tool, because `dotnet tool install` is an SDK command.
 
 ```powershell
 dotnet tool install -g nyviken-sharptillery
