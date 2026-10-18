@@ -12,8 +12,10 @@ Sharptillery is a .NET global tool (PackageId `nyviken-sharptillery`, command `s
 Core flow:
 - CLI args/YAML are parsed into `ArtilleryConfig` in `src/SharpArtillery/CommandLineParser.cs` (`BuildConfig`; YAML is loaded by `YamlHelper.ReadYaml`).
 - `src/SharpArtillery/MainService.cs` maps config into runtime `Settings` and orchestrates test execution.
-- `src/SharpArtillery/Manager.cs` owns the run loop: it enqueues `HttpRequestMessage` instances, starts clients, aggregates `DataPoint` results, and exposes `GetProgress` for periodic progress output.
-- `src/SharpArtillery/Client.cs` is the worker that dequeues requests and sends them using `HttpClient`, then enqueues `DataPoint` to `Manager.ResponseMessageQueue`.
+- `src/SharpArtillery/Manager.cs` owns the run loop (blast mode). `PrepareForTest` builds a `RequestTemplate` for the phase, creates the clients and starts their tasks parked on a `TaskCompletionSource` start gate (`Manager.Started`). `RunTest` is async: it opens the gate, arms the duration timer, and awaits a `Channel<DataPoint>` together with a 1 s `PeriodicTimer`, so the loop sleeps between results and progress lines (no busy loop). It publishes a new `Progress` snapshot per tick (`GetProgress`): requests, error ratio and "% done" are per phase, RPS and mean latency are for the last tick.
+- `src/SharpArtillery/Client.cs` is the worker: it waits at the gate, then loops: rate limiter (if `-r`), `Manager.TryClaimRequest()` (the shared Interlocked `-n` counter; always true with `-d`), `RequestTemplate.Build()` right before the send, `HttpClient.SendAsync`, and `Manager.ResultWriter.TryWrite(dataPoint)`. Latency is one `Stopwatch` reading; the `DateTime` fields are derived from `Manager.GlobalStartUtc` plus the timeline.
+- Phase end: the duration timer (or the `-n` counter running out, or auto-tune) cancels the clients; `RunTest` then awaits every client task, completes the channel and drains it, so no result can land in the next phase. A request still in flight at that moment is dropped and counted in `Progress.CancelledAtPhaseEnd` (printed as "cancelled at phase end"), not recorded as a 500.
+- `Manager` takes an optional `TimeProvider` (progress ticker, duration timer, auto-tune interval). Tests pass a `FakeTimeProvider` and advance it instead of sleeping. The per-request timeout and the `ClientRateLimiter` still use the system clock.
 
 ## Local dev workflows
 
@@ -22,6 +24,7 @@ Core flow:
 	- Run Sharptillery: `dotnet run --project .\src\SharpArtillery\SharpArtillery.csproj -- -t http://localhost:8080/Test/get -m GET -c 1 -n 10`
 - Run the tests: `dotnet test Sharptillery.sln`. They need no network or test API.
 - Build the sample API image: run `docker-build.cmd` (builds `testapi:dev`).
+- Benchmark gate: `pwsh -NoProfile -File tools/bench.ps1 -StartApi -StopApi` builds Release, runs the card's short commands against the container at low priority and prints requests, req/s, tool CPU / wall and peak memory. `-Baseline <other checkout>` runs the same commands against a second build for a before/after table; `-Runs slow,c64` picks runs. `-StartApi` starts the container without a CPU limit (the VS Code task's `--cpus=0.5` caps the API near 5k req/s); `-ApiCpus 0.5` restores that limit.
 - Publish the tool package: `publish.cmd` (uses `$env:NUGET_API_KEY`).
 
 ## Configuration conventions
@@ -42,14 +45,16 @@ Core flow:
 
 - `tests/SharpArtillery.Tests` is an xUnit project in `Sharptillery.sln`. `IsPackable` is false, so it never goes into the tool package. `SharpArtillery.csproj` makes internals visible to it.
 - No real HTTP: `Stubs/StubHttpHandler.cs` answers from a delegate and records each request. Blast mode gets it through `StubHttpClientFactory` (an `ICustomHttpClientFactory`). Flow mode gets it through the optional `handler` parameter of `VirtualUser`, `FlowRunner` and `MainService.RunFlowModeAsync`. That parameter defaults to null, and then each VU builds its own handler and cookie jar.
-- Test parallelization is off (`AssemblyInfo.cs`), because the run-loop tests time real phases.
-- Red tests for later work are `[Fact(Skip = "slice N")]` with `[Trait("slice", "N")]`. The slice that fixes the bug removes the `Skip`. To see them fail today, remove the `Skip` and run `dotnet test --filter "slice=2"`.
+- Test parallelization is off (`AssemblyInfo.cs`): the run-loop tests keep cores busy, and two of them measure real time (the start-gate grace period and the 100 ms Stopwatch latency).
+- Run-loop tests (`ManagerTests.cs`) drive phases with `FakeTimeProvider` (`Microsoft.Extensions.TimeProvider.Testing`): a stub that blocks until a `TaskCompletionSource` is set, then `clock.Advance(...)` to end the phase or fire a progress tick. Every await is bounded by `Patience` (30 s); a poll (`WaitUntilAsync`) is used only where no awaitable signal exists.
+- Red tests for later work are `[Fact(Skip = "slice N")]` with `[Trait("slice", "N")]`. The slice that fixes the bug removes the `Skip`. To see them fail today, remove the `Skip` and run `dotnet test --filter "slice=3"`.
 
 ## Project-specific coding conventions and gotchas
 
 - Target framework is `net10.0` with `LangVersion=preview` and `ImplicitUsings=disable` (see `src/SharpArtillery/SharpArtillery.csproj`), add explicit `using` directives.
-- Blast mode: `Client`s share the one `HttpClient` that `CustomHttpClientFactory.CreateClient()` returns. Do not dispose it per request. `CustomHttpClientFactory` implements `IDisposable`, but `MainService.Run` creates it without `using` and nothing disposes it.
+- Blast mode: `Client`s share the one `HttpClient` that `CustomHttpClientFactory.CreateClient()` returns. Do not dispose it per request. `CustomHttpClientFactory` implements `IDisposable`, but `MainService.Run` creates it without `using` and nothing disposes it. Its `MaxConnectionsPerServer` is the number of users the run can reach (`-c`, the auto-tune maximum, the largest YAML phase), one connection per user.
+- A bad header or URL fails in `PrepareForTest` (it builds one request from the template up front), not once per request during the run.
 - Flow mode: `CustomHttpClientFactory` is created but not used in flow mode. Each `VirtualUser` builds its own `HttpClient` with its own cookie jar (`src/SharpArtillery/VirtualUser.cs`), and `VirtualUser.Dispose` disposes that client. A handler passed in (tests) is not disposed by the VU.
 - YAML phases run one after another and their results accumulate: `Manager.RunTest()` does not clear `_responseData` (`src/SharpArtillery/Manager.cs`), and flow mode collects every phase's results in `MainService.RunFlowModeAsync` (`src/SharpArtillery/MainService.cs`).
-- `Settings.Validate` throws `ArgumentException`, and neither `Program.cs` nor `CommandLineParser.cs` catches it. The auto-tune `ArgumentException`s in `Manager.RunAutoTuneAsync` are thrown inside the `Task.Run` that `Manager.RunTest` starts, and the `catch` around `autoTuneTask.Wait` in `RunTest` swallows them, so they never reach the user. The run goes on without auto-tune and prints no error about it (the "AutoTune enabled" line still prints first).
+- `Settings.Validate` throws `ArgumentException`, and neither `Program.cs` nor `CommandLineParser.cs` catches it. The auto-tune `ArgumentException`s in `Manager.RunAutoTuneAsync` are thrown inside the `Task.Run` that `Manager.RunTest` starts, and the `catch` around `autoTuneTask.WaitAsync` at the phase end swallows them, so they never reach the user. The run goes on without auto-tune and prints no error about it (the "AutoTune enabled" line still prints first).
 - New CLI flag checks should follow the System.CommandLine pattern in `CommandLineParser.AddValidators` (`rootCommand.Validators.Add(result => ... result.AddError(...))`, `src/SharpArtillery/CommandLineParser.cs`), so the error reaches the user through the parser.

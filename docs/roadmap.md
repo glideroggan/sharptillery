@@ -45,23 +45,17 @@ No open items: the YAML phase and flow work listed here is done, see Done.
 ## Cleanup
 
 - [ ] Review client lifecycle reuse in `PrepareForTest`, and ensure clients are not leaked across runs (`src/SharpArtillery/Manager.cs`).
-- [ ] Revisit `MaxConnectionsPerServer` sizing, and consider scaling based on VUs (`src/SharpArtillery/CustomHttpClientFactory.cs`).
 
 ## Code review actions
 
 ### P2 - Nice to have
 
-- **AP-002: Thread instead of Task.** `MainService.RunPhaseTest` and `MainService.RunNonPhaseTest` use `new Thread(manager.RunTest)` when `Task.Run()` would be cleaner and more idiomatic. Impact: less composable, harder to await properly.
 - **AP-004: Mixing concerns in MainService.Run().** `MainService.Run` gets an already-parsed `flags.YamlConfig` (YAML is read in `CommandLineParser.BuildConfig`), but it still handles config checks, the blast and flow mode branches, phase loops, non-phase runs and report writing in one method. Suggested fix: extract smaller focused methods or classes.
 - **AP-006: Console output scattered everywhere.** `Manager.cs`, `MainService.cs`, `Client.cs` use `Console.Out.WriteLine` instead of ILogger. Impact: hard to control verbosity, no log levels.
-- **AP-007: Blocking WaitOne() in async context.** `Client.RunAsync` blocks the thread on `_manager.StartClients.WaitOne()` in an `async Task` method. Suggested fix: `ManualResetEventSlim` with async waiting or `TaskCompletionSource`.
 
 ### P3 - Cleanup (low priority)
 
 - **BUG-001: IDisposable cosmetic issue.** `Manager.cs` implements `IDisposable`, but this is a CLI tool and the OS reclaims resources on exit anyway. Not a real bug.
-- **BUG-002: Misleading volatile keyword.** `Manager._responseData` is declared `volatile List<DataPoint>`: all writes happen on one thread and reads happen after completion. Suggested fix: remove `volatile`, optionally make `Results` return a copy.
-- **BUG-003: Double DateTime.UtcNow.** `Client.RunAsync` sets `RequestReceivedTime` and `EndTime` with two separate `DateTime.UtcNow` calls. Impact: minor microsecond timing inaccuracy.
-- **SIMP-006: TopupSettings nested in Manager.** `Manager.TopupSettings` (nested record) could move to `Models/` for clarity.
 - **DEAD-002: Excel reporting disabled.** `MainService.WriteReportAsync` throws `NotImplementedException` for the `.xlsx` extension. Decision needed: implement or remove the option.
 
 ## Done
@@ -92,6 +86,15 @@ No open items: the YAML phase and flow work listed here is done, see Done.
 
 - [x] `simulateErrors=1` mode in `testapi` produces a realistic mixture of outcomes for report testing.
 
+### Run loop
+
+- [x] Blast mode without a busy loop: the clients write to a `Channel<DataPoint>` that `Manager.RunTest` awaits together with a 1 s `PeriodicTimer` (`src/SharpArtillery/Manager.cs`). The `-c 8 -d 5s` run against a 500 ms endpoint went from 5.8 s to under 1 s of tool CPU.
+- [x] Requests are built from a per-phase `RequestTemplate` right before the send; the pre-built queue and its top-ups are gone, and a shared Interlocked counter hands out the `-n` slots.
+- [x] A request still in flight at the phase end is dropped and counted as "cancelled at phase end" instead of a 500, and nothing from one phase lands in the next: the phase end cancels, awaits every client, completes the channel and drains it.
+- [x] The error ratio and "% done" are per phase, not per last second.
+- [x] `MaxConnectionsPerServer` is the number of users the run can reach (`src/SharpArtillery/CustomHttpClientFactory.cs`).
+- [x] `tools/bench.ps1` measures the card's runs (requests, req/s, tool CPU / wall, peak memory) against the local testapi, with an optional baseline checkout.
+
 ### Code review actions completed
 
 | ID | Summary |
@@ -110,3 +113,8 @@ No open items: the YAML phase and flow work listed here is done, see Done.
 | DEAD-003 | Removed unused `_httpClientFactory` field (part of SIMP-002) |
 | DEAD-004 | Phase results accumulate across phases; the phase-overwrite TODO is gone (see the YAML scenarios entries above) |
 | INV-001 | Multi-phase YAML checked against a local testapi with `config.yaml`: two phases ran end to end, the report total (25264) equals the sum of the phases (7926 + 17338), the HTML has a Phase Breakdown section, and the file parses |
+| AP-002 | `Manager.RunTest` is `async Task`; `MainService` awaits it instead of starting a `Thread` |
+| AP-007 | The start gate is a `TaskCompletionSource` that the clients await; no blocking `WaitOne` |
+| BUG-002 | `_responseData` is a plain `readonly` list again. It was never a data race: the real race was a result enqueued after the run loop had stopped, which the phase-end drain removes |
+| BUG-003 | One `Stopwatch` reading per request gives the latency; the `DateTime` fields are derived from it |
+| SIMP-006 | `TopupSettings` is gone with the request queue |
