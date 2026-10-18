@@ -18,14 +18,20 @@
     <PackageId>nyviken-sharptillery</PackageId>
     <Authors>Roger</Authors>
     <ToolCommandName>sharptillery</ToolCommandName>
-    <Version>0.5.1</Version>
+    <Version>0.5.2</Version>
     <PackageOutputPath>./nupkg</PackageOutputPath>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <Description>Load testing tool with inspiration from:
-      LoadTest
-      Artillery
-    </Description>
+    <Description>Command-line HTTP load testing tool with console statistics and HTML reports.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/glideroggan/sharptillery</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/glideroggan/sharptillery</PackageProjectUrl>
+    <PackageReadmeFile>readme.md</PackageReadmeFile>
+    <PackageTags>load-testing;http;benchmark;dotnet-tool;cli</PackageTags>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../readme.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
   
   <ItemGroup>
     <None Remove="Reporting\ConsoleReporter.cs~" />
