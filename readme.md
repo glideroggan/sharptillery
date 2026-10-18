@@ -81,6 +81,8 @@ dotnet run --project src/testapi --urls http://localhost:8080
 dotnet run --project src/SharpArtillery -- -t "http://localhost:8080/Test/get?simulateErrors=1" -m GET -c 4 -d 00:00:10 -o report
 ```
 
+Run the tests with `dotnet test Sharptillery.sln`. They need no network and no test API.
+
 Planned work and ideas are in [docs/roadmap.md](https://github.com/glideroggan/sharptillery/blob/main/docs/roadmap.md).
 
 ## License
