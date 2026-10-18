@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>6fcdb7b2-04e9-459d-967e-6c36cfa03802</UserSecretsId>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    <!-- The sample API is a test fixture, never part of the dotnet tool package. -->
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
