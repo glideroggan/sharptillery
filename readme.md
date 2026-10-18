@@ -1,116 +1,88 @@
-Tags: #sharptillery #dotnet #loadtesting #todo
+# Sharptillery
 
-# Sharptillery TODO List
+Sharptillery is a command-line HTTP load testing tool for .NET. It sends requests from a set of virtual users, prints latency and error statistics to the console, and can write an HTML report.
 
-Last updated: 2025-12-13
+[![NuGet](https://img.shields.io/nuget/v/nyviken-sharptillery.svg)](https://www.nuget.org/packages/nyviken-sharptillery)
 
-## Current verified setup
+![Sharptillery HTML report](https://raw.githubusercontent.com/glideroggan/sharptillery/main/docs/images/report.png)
 
-- `testapi` endpoint: `GET http://localhost:8080/Test/get`
-- `testapi` simulation: `GET http://localhost:8080/Test/get?simulateErrors=1` (mixed 2xx, 4xx, 5xx, and occasional slow responses)
-- Local runner: `dotnet run --project .\src\SharpArtillery\SharpArtillery.csproj -- -t http://localhost:8080/Test/get -m GET -n 10`
-- HTML report generation: `dotnet run --project .\src\SharpArtillery\SharpArtillery.csproj -- -t http://localhost:8080/Test/get -m GET -n 25 -o report`
-- VS Code task: `sharptillery: run against local testapi` (runs the local project via `dotnet run`)
+## Install
 
-## Install (global tool)
+Requires the .NET 10 SDK or runtime.
 
-- Install latest stable:
-    - `dotnet tool install -g nyviken-sharptillery --version 0.3.6`
-- Upgrade:
-    - `dotnet tool update -g nyviken-sharptillery --version 0.3.6`
-- Run:
-    - `sharptillery -t http://localhost:8080/Test/get -d 00:00:10 -c 10 -o report`
+```powershell
+dotnet tool install -g nyviken-sharptillery
+```
 
-## Publish (NuGet.org)
+Upgrade with `dotnet tool update -g nyviken-sharptillery`.
 
-- Create the package:
-    - `dotnet pack .\src\SharpArtillery\SharpArtillery.csproj -c Release --no-build`
-- Publish using an environment variable (recommended):
-    - `$env:NUGET_API_KEY = "<YOUR_KEY>"`
-    - `dotnet nuget push .\src\SharpArtillery\nupkg\nyviken-sharptillery.0.3.6.nupkg --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json`
-- Security note:
-    - Do not paste API keys into terminals, logs, issues, or chat.
-    - If an API key is ever pasted or committed, revoke it immediately and create a new one.
+## Quick start
 
-## TODOs (prioritized)
+Run 4 virtual users against an endpoint for 10 seconds and write an HTML report named `report.html`:
 
-## Metrics and reporting (ideas)
+```powershell
+sharptillery -t https://example.com/api/endpoint -m GET -c 4 -d 00:00:10 -o report
+```
 
-## Implemented (checked)
+Use `-n` instead of `-d` to send a fixed number of requests. Use `-d` or `-n`, not both. Run `sharptillery --help` for the full list.
 
-Last updated: 2025-12-13
+| Option | Meaning |
+|--------|---------|
+| `-t, --target` | Target URL (http or https) |
+| `-c, --clients` | Virtual users (parallel clients), default 1 |
+| `-n, --requests` | Maximum number of requests |
+| `-d, --duration` | Run length, `HH:MM:SS` |
+| `-T, --timeout` | Per-request timeout, `HH:MM:SS`, default 5 seconds |
+| `-m, --method` | HTTP method: GET, POST or PUT |
+| `-b, --body` | JSON body content |
+| `-H, --header` | Header as `Name:Value`, can be repeated |
+| `-o, --output` | Report name without extension (writes an HTML report) |
+| `-e, --extension` | Report type, `html` |
+| `-y, --yaml` | Run a YAML scenario file (see below) |
+| `-r, --rps` | Target requests per second, spread across the clients |
+| `-A, --autotune` | Find the highest sustainable RPS (duration mode only) |
 
-### Client-side metrics
+## YAML scenarios
 
-- [x] Timeout detection for per-request timeouts (based on `-T`), and timeout counts in the HTML report.
-- [x] Status-family counts (2xx, 3xx, 4xx, 5xx) in the HTML report.
-- [x] Status-code distribution (histogram) in the HTML report.
-- [x] Error-type distribution (histogram) in the HTML report, grouped by timeout and HTTP status codes, and enriched with exception types when present.
-- [x] Response `Content-Length` capture (when provided by the server), plus basic response length stats in the HTML report.
+A YAML file describes phases (virtual users and duration per phase) and a flow that each virtual user runs in order. A `think` step pauses for the given number of seconds.
 
-### HTML report UX
+```yaml
+settings:
+  target: "https://example.com"
+  timeout: 5
 
-- [x] Short runs (single time bucket) now clamp the time axis to start at 0 seconds for readability.
-- [x] Status and error histograms are rendered as charts (not tables) for cleaner scanning.
+phases:
+  - name: "Flow Test"
+    duration: 10
+    vu: 3
 
-### Test API simulation
+scenarios:
+  - name: "Multi-step flow test"
+    flow:
+      - get:
+          url: "/api/endpoint"
+      - think: 1
+      - get:
+          url: "/api/endpoint"
+```
 
-- [x] Added `simulateErrors=1` mode to `testapi` to reliably produce a more realistic mixture of outcomes for report testing.
+Run it with:
 
-Examples:
+```powershell
+sharptillery -y flow.yaml -o report
+```
 
-- Generate mixed responses and some timeouts:
-    - `dotnet run --project .\src\SharpArtillery\SharpArtillery.csproj -- -t "http://localhost:8080/Test/get?simulateErrors=1" -m GET -c 4 -d 00:00:05 -T 00:00:01 -o report_sim_errors`
-- Force a body size for response-length metrics:
-    - `http://localhost:8080/Test/get?simulateErrors=1&bytes=2048`
+## Development
 
-### Client-observed metrics that are usually most useful
+`src/SharpArtillery` is the tool. `src/testapi` is a small target API with an endpoint that can simulate errors and slow responses, useful for trying the tool locally:
 
-- Latency percentiles: p50, p90, p95, p99 (overall and per phase), plus min and max.
-- Status code breakdown: 2xx, 3xx, 4xx, 5xx, plus top specific codes (for example 429, 503).
-- Error taxonomy: timeout, DNS, TLS, connection reset, HTTP protocol errors, request cancellation.
-- Bytes in and out: response size distribution and throughput (bytes per second).
-- SLA or Apdex style thresholds: percent under X ms, percent over Y ms.
-- Load generator health (still client-side): achieved concurrency vs configured, queueing or scheduling delay, process CPU and memory, and GC counters.
+```powershell
+dotnet run --project src/testapi --urls http://localhost:8080
+dotnet run --project src/SharpArtillery -- -t "http://localhost:8080/Test/get?simulateErrors=1" -m GET -c 4 -d 00:00:10 -o report
+```
 
-### HTML report sections that tend to be actionable
+Planned work and ideas are in [docs/roadmap.md](https://github.com/glideroggan/sharptillery/blob/main/docs/roadmap.md).
 
-- Summary tiles: RPS, p50 and p95 and p99, error rate, 4xx rate, 5xx rate, bytes per second.
-- Time series: RPS over time, latency percentiles over time, stacked status codes over time.
-- Distributions: latency histogram with percentile markers.
-- Tables: top status codes, top error categories, worst time buckets (for example “worst 1 second by p99”).
+## License
 
-### Server and container stats
-
-- For now, focus on client-observed metrics.
-- Server or container stats (CPU, memory, GC, thread pool, connection counts) are valuable, but need additional work and tooling to collect reliably.
-
-### Next up (YAML scenario phases and flows)
-
-- [ ] Expand YAML support from “single GET” to full multi-step per-client flows, for example `get`, `post`, and sequential steps that each virtual user executes in order (`src/SharpArtillery/Models/Yaml.cs`, `src/SharpArtillery/MainService.cs`, `src/SharpArtillery/Client.cs`).
-- [ ] Support multiple `flow` entries and produce one request per flow step per virtual user, not only `flow[0]`.
-- [ ] Define how `settings.phases` maps to runtime, for example per-phase VUs, per-phase duration or requests, and phase transitions without losing results.
-- [ ] Tag each `DataPoint` with phase metadata (phase index and or name) so reports can group by phase.
-- [ ] Persist or aggregate results across phases instead of clearing or overwriting (`src/SharpArtillery/Manager.cs`, `src/SharpArtillery/MainService.cs`).
-- [ ] Add per-phase console progress output and optional per-phase sections in the HTML report (`src/SharpArtillery/Reporting/HtmlReport.cs`).
-
-### Correctness and safety
-
-- [ ] Make TLS certificate validation configurable, default to secure validation, add a curl-style `--insecure` flag if needed (`src/SharpArtillery/CustomHttpClientFactory.cs`).
-
-### Feature completeness
-
-- [ ] Implement `ConstantRps` end-to-end or remove the flag, and document the chosen behaviour (`src/SharpArtillery/Manager.cs`).
-- [ ] Improve auto-tune to converge on a stable client count (supports backing off, not only scaling up) (`src/SharpArtillery/Manager.cs`).
-- [ ] Re-enable Excel reporting (`.xlsx`) and remove interactive prompts from the export path by adding a quiet mode flag (`src/SharpArtillery/MainService.cs`, `src/SharpArtillery/Reporting/MyExcel.cs`).
-
-### Diagnostics and observability
-
-- [ ] Connect `dotnet-counters` to the `testapi` container to collect metrics during runs (`src/testapi/Program.cs`).
-- [ ] Create a reusable metrics base image or sidecar (for example using `dotnet-counters` or `dotnet-monitor`) to capture server-side metrics during runs (request queue, thread pool, GC, connection counts) for any target API container.
-- [ ] Add trace logging where marked, and consider high-performance logging patterns for the progress loop (`src/SharpArtillery/Manager.cs`, `src/SharpArtillery/MainService.cs`).
-
-### Cleanup
-
-- [ ] Review client lifecycle reuse in `PrepareForTest`, and ensure clients are not leaked across runs (`src/SharpArtillery/Manager.cs`).
-- [ ] Revisit `MaxConnectionsPerServer` sizing, and consider scaling based on VUs (`src/SharpArtillery/CustomHttpClientFactory.cs`).
+MIT. See [LICENSE](https://github.com/glideroggan/sharptillery/blob/main/LICENSE).
