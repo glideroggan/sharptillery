@@ -252,45 +252,46 @@ public sealed class MainService
         Console.Out.WriteLine($"\n=== {phaseLabel} started (VU: {settings.Vu}, Duration: {settings.Duration?.TotalSeconds ?? 0}s, Requests: {settings.MaxRequests ?? 0}) ===");
         
         await manager.PrepareForTest(settings);
-        var runningTest = new Thread(manager.RunTest) { IsBackground = true };
-        runningTest.Start();
-        
+        var runningTest = manager.RunTest();
+
         // report progress from manager
-        while (runningTest.IsAlive)
+        while (!runningTest.IsCompleted)
         {
             var progress = manager.GetProgress;
             // TODO: https://learn.microsoft.com/en-us/dotnet/core/extensions/high-performance-logging
             Console.Out.WriteLine(
                 $"[{phaseLabel}] Requests: {progress.Requests} ({progress.PercentDone}%), RPS: {progress.Rps}, " +
                 $"Error ratio: {progress.ErrorRatio * 100:F}%, mean latency: {progress.MeanLatency:F} ms");
-            await Task.Delay(1000);
+            await Task.WhenAny(runningTest, Task.Delay(1000));
         }
+        await runningTest;
         await manager.ProcessData();
-        
+
         // Print phase summary
         var phaseRequests = manager.GetProgress.Requests;
         var phaseRps = manager.AverageRps;
         var phaseErrors = manager.GetProgress.ErrorRatio * 100;
-        Console.Out.WriteLine($"=== {phaseLabel} completed: {phaseRequests} requests, {phaseRps} avg RPS, {phaseErrors:F}% errors ===\n");
+        var phaseCancelled = manager.GetProgress.CancelledAtPhaseEnd;
+        Console.Out.WriteLine($"=== {phaseLabel} completed: {phaseRequests} requests, {phaseRps} avg RPS, {phaseErrors:F}% errors, {phaseCancelled} cancelled at phase end ===\n");
     }
 
     private static async Task RunNonPhaseTest(Manager manager, Settings settings)
     {
         // var endpoint = flags.YamlConfig.Settings.Target + flags.YamlConfig.Scenarios[0].Flow[0].Get.Url;
         await manager.PrepareForTest(settings);
-        var runningTest = new Thread(manager.RunTest) { IsBackground = true };
-        runningTest.Start();
+        var runningTest = manager.RunTest();
 
         // report progress from manager
-        while (runningTest.IsAlive)
+        while (!runningTest.IsCompleted)
         {
             var progress = manager.GetProgress;
             // TODO: https://learn.microsoft.com/en-us/dotnet/core/extensions/high-performance-logging
             Console.Out.WriteLine(
                 $"Requests: {progress.Requests} ({progress.PercentDone}%), requests per second: {progress.Rps}, " +
                 $"Error ratio: {progress.ErrorRatio * 100:F}%, mean latency: {progress.MeanLatency:F} ms");
-            await Task.Delay(1000);
+            await Task.WhenAny(runningTest, Task.Delay(1000));
         }
+        await runningTest;
 
         await manager.ProcessData();
 
@@ -303,6 +304,7 @@ public sealed class MainService
             manager.AverageRps,
             manager.AutoTuneResult);
         reporter.PrintSummary();
+        Console.Out.WriteLine($"Cancelled at phase end: {manager.GetProgress.CancelledAtPhaseEnd}");
         reporter.PrintPercentiles();
     }
 

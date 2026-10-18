@@ -1,14 +1,12 @@
 #pragma warning disable CA1848
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
-using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SharpArtillery.Configs;
@@ -18,25 +16,38 @@ namespace SharpArtillery;
 
 internal sealed class Manager : IDisposable
 {
-    private volatile List<DataPoint> _responseData = new();
+    private readonly List<DataPoint> _responseData = new();
 
+    // Shared with the clients and the auto-tune task; touched only through Interlocked/Volatile.
     private long _totalRequests;
     private long _totalErrors;
+    private long _claimedRequests;
+    private long _cancelledAtPhaseEnd;
+    private int _runningClients;
+
     private (int BestClients, double BestRps)? _autoTuneResult;
 
     /// <summary>
     /// Timer for current phase duration (restarted each phase).
     /// </summary>
     public readonly Stopwatch TotalTimeTimer = new();
-    
+
     /// <summary>
     /// Global timer spanning all phases for report timeline (never reset).
     /// </summary>
     public readonly Stopwatch GlobalTimeTimer = new();
-    
+
+    /// <summary>
+    /// Wall-clock time at which <see cref="GlobalTimeTimer"/> started. The clients derive every
+    /// DateTime of a data point from it and the stopwatch, so one request never reads two clocks.
+    /// </summary>
+    public DateTime GlobalStartUtc { get; private set; }
+
     public Settings Settings { get; private set; } = new();
     private int _averageRps;
     private readonly ICustomHttpClientFactory _httpClientFactory;
+    private readonly TimeProvider _timeProvider;
+    private long _phaseStartedAt;
 
     /// <summary>
     /// Exposes rate limiting config for clients to create their own rate limiters.
@@ -50,20 +61,22 @@ internal sealed class Manager : IDisposable
 
     private readonly List<Client> _clients = new();
     private readonly List<Task> _clientTasks = new();
-    public readonly ConcurrentQueue<HttpRequestMessage> RequestMessageQueue = new();
-    public readonly ConcurrentQueue<DataPoint> ResponseMessageQueue = new();
 
-    private ManualResetEvent _done = new(false);
+    // One channel, gate and template per phase; PrepareForTest replaces them.
+    private Channel<DataPoint> _results = CreateResultChannel();
+    private TaskCompletionSource _startGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private TaskCompletionSource _clientsDone = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private RequestTemplate? _requestTemplate;
 
-    public Manager(ICustomHttpClientFactory customHttpClientFactory, ILoggerFactory loggerFactory)
+    public Manager(ICustomHttpClientFactory customHttpClientFactory, ILoggerFactory loggerFactory,
+        TimeProvider? timeProvider = null)
     {
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<Manager>();
         _httpClientFactory = customHttpClientFactory;
+        _timeProvider = timeProvider ?? TimeProvider.System;
         Clientcts = new CancellationTokenSource();
     }
-
-    private sealed record TopupSettings(int WarningLimit, int TopupAmount, int TopupLimit);
 
     private CancellationTokenSource Clientcts { get; set; }
     public CancellationToken ClientKillToken => Clientcts.Token;
@@ -77,6 +90,22 @@ internal sealed class Manager : IDisposable
     /// Gets the average RPS calculated after test completion.
     /// </summary>
     public int AverageRps => _averageRps;
+
+    /// <summary>
+    /// Completes when <see cref="RunTest"/> opens the phase; the clients send nothing before that.
+    /// </summary>
+    internal Task Started => _startGate.Task;
+
+    /// <summary>
+    /// Where the clients put each finished request.
+    /// </summary>
+    internal ChannelWriter<DataPoint> ResultWriter => _results.Writer;
+
+    /// <summary>
+    /// What a request of the current phase looks like; the clients build each request from it.
+    /// </summary>
+    internal RequestTemplate RequestTemplate =>
+        _requestTemplate ?? throw new InvalidOperationException("PrepareForTest has not run.");
 
     public async Task ProcessData()
     {
@@ -103,16 +132,12 @@ internal sealed class Manager : IDisposable
             point.Rps = right - left + 1;
             _responseData[right] = point;
         }
-
-        _done.WaitOne();
     }
 
     public volatile Progress GetProgress = new();
 
     public List<DataPoint> Results => _responseData;
-    internal readonly ManualResetEvent StartClients = new(false);
     private readonly ILogger<Manager> _logger;
-    private TopupSettings _topupSettings = new(WarningLimit: 0, TopupAmount: 0, TopupLimit: 0);
     private readonly ILoggerFactory _loggerFactory;
 
     public void Dispose()
@@ -127,10 +152,20 @@ internal sealed class Manager : IDisposable
         _autoTuneResult = null;
         Interlocked.Exchange(ref _totalRequests, 0);
         Interlocked.Exchange(ref _totalErrors, 0);
+        Interlocked.Exchange(ref _claimedRequests, 0);
+        Interlocked.Exchange(ref _cancelledAtPhaseEnd, 0);
         // reset progress
         GetProgress = new();
-        // Reset StartClients gate for this phase (clients wait until RunTest sets it)
-        StartClients.Reset();
+        _results = CreateResultChannel();
+        _startGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _clientsDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Building one request up front surfaces a bad header or URL here, before any client runs,
+        // instead of as one recorded error per request for the whole phase.
+        Console.Out.WriteLine("Preparing requests...");
+        _requestTemplate = new RequestTemplate(settings);
+        _requestTemplate.Build().Dispose();
+
         // recreate clients per run so they bind to the current cancellation token
         Console.Out.WriteLine("Preparing clients...");
         Clientcts = new CancellationTokenSource();
@@ -145,21 +180,49 @@ internal sealed class Manager : IDisposable
             Console.Out.WriteLine($"Rate limiting: {settings.ConstantRps} RPS across {settings.Vu} clients ({rpsPerClient:F1} RPS/client)");
         }
 
-        // configure the request queue settings
-        _topupSettings = new TopupSettings(2000, 4000 * Settings.Vu, 4000);
-
-        // create request queue
-        Console.Out.WriteLine("Preparing requests...");
-        PrepareRequestQueue();
-
         // activate the clients (not starting test)
         Console.Out.WriteLine("Activating clients...");
+        Interlocked.Exchange(ref _runningClients, _clients.Count);
         foreach (var client in _clients)
         {
-            _clientTasks.Add(Task.Run(() => client.RunAsync(ClientKillToken), ClientKillToken));
+            // No token on Task.Run: a task cancelled before it starts would never report itself
+            // finished, and the phase end waits for every client.
+            _clientTasks.Add(Task.Run(() => client.RunAsync(ClientKillToken)));
         }
 
         return new ValueTask(Task.CompletedTask);
+    }
+
+    private static Channel<DataPoint> CreateResultChannel() =>
+        Channel.CreateUnbounded<DataPoint>(new UnboundedChannelOptions
+        {
+            // The run loop is the only reader, which lets the channel skip its reader lock.
+            SingleReader = true,
+            SingleWriter = false
+        });
+
+    /// <summary>
+    /// Hands out one request slot. Always true in duration mode; in max-requests mode false once
+    /// every slot of the phase is taken, even while earlier requests are still in flight.
+    /// </summary>
+    internal bool TryClaimRequest()
+    {
+        if (Settings.MaxRequests is not { } max) return true;
+        return Interlocked.Increment(ref _claimedRequests) <= max;
+    }
+
+    /// <summary>
+    /// A request was in flight when the phase ended. It has no outcome, so it is not a data point.
+    /// </summary>
+    internal void CountCancelledAtPhaseEnd() => Interlocked.Increment(ref _cancelledAtPhaseEnd);
+
+    /// <summary>
+    /// A client's loop has ended, for whatever reason; the last one lets the phase finish.
+    /// </summary>
+    internal void ClientFinished()
+    {
+        if (Interlocked.Decrement(ref _runningClients) == 0)
+            _clientsDone.TrySetResult();
     }
 
     private void AddClients(int count)
@@ -170,7 +233,8 @@ internal sealed class Manager : IDisposable
             var clientIndex = _clients.Count; // New client gets next index
             var client = new Client(this, _httpClientFactory, _loggerFactory, clientIndex);
             _clients.Add(client);
-            _clientTasks.Add(Task.Run(() => client.RunAsync(ClientKillToken), ClientKillToken));
+            Interlocked.Increment(ref _runningClients);
+            _clientTasks.Add(Task.Run(() => client.RunAsync(ClientKillToken)));
         }
 
         Settings.Vu += count;
@@ -195,7 +259,7 @@ internal sealed class Manager : IDisposable
 
             try
             {
-                await Task.Delay(tune.Interval, ClientKillToken).ConfigureAwait(false);
+                await Task.Delay(tune.Interval, _timeProvider, ClientKillToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -281,95 +345,42 @@ internal sealed class Manager : IDisposable
         _autoTuneResult ??= (bestClients, bestRps);
     }
 
-    private void PrepareRequestQueue()
+    /// <summary>
+    /// What arrived since the last progress line; Rps and the mean latency on the progress line
+    /// are about this interval, the request count and error ratio about the whole phase.
+    /// </summary>
+    private struct IntervalStats
     {
-        // TODO: put in trace logs
-        // TODO: handle constant RPS
-        RequestMessageQueue.Clear();
-
-        if (Settings.MaxRequests.HasValue)
-        {
-            // TODO: make sure its not too many requests in MaxRequests, in that case we want to top up when going low
-            TopUpRequestQueue(Settings.MaxRequests.Value);
-        }
-        else if (Settings.Duration.HasValue)
-        {
-            // NOTE: how many requests to start with? depends on duration and how many clients that will go
-            TopUpRequestQueue(_topupSettings.TopupAmount);
-        }
+        public int Requests;
+        public int OkRequests;
+        public double OkLatencyMs;
     }
 
-    private void TopUpRequestQueue(int count)
-    {
-        for (var i = 0; i < count; i++)
-        {
-            var method = Settings.Method?.ToUpperInvariant() switch
-            {
-                "GET" => HttpMethod.Get,
-                "POST" => HttpMethod.Post,
-                "PUT" => HttpMethod.Put,
-                "DELETE" => HttpMethod.Delete,
-                "PATCH" => HttpMethod.Patch,
-                "HEAD" => HttpMethod.Head,
-                "OPTIONS" => HttpMethod.Options,
-                null => HttpMethod.Get,
-                _ => HttpMethod.Get
-            };
-            var req = new HttpRequestMessage(method, Settings.Target);
-            if (Settings.Headers != null)
-            {
-                foreach (var header in Settings.Headers)
-                {
-                    req.Headers.Add(header.Key, header.Value);
-                }
-            }
-
-            if (Settings.JsonContent != null)
-            {
-                req.Content = JsonContent.Create(Settings.JsonContent);
-                req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-            }
-
-            RequestMessageQueue.Enqueue(req);
-        }
-    }
-
-    private void UpdateReport(ref Stopwatch timer, ref int accumulatedRequests, ref int accumulatedErrors,
-        ref float accumulatedLatency)
-    {
-        GetProgress.Requests += accumulatedRequests;
-        GetProgress.ErrorRatio = GetProgress.Requests > 0
-            ? (float)accumulatedErrors / GetProgress.Requests
-            : 0f;
-        GetProgress.Rps = accumulatedRequests;
-        GetProgress.MeanLatency = accumulatedRequests > 0
-            ? accumulatedLatency / accumulatedRequests
-            : 0f;
-        // TODO: needs to change to handle <duration>
-        GetProgress.PercentDone = Settings.MaxRequests > 0
-            ? (int)(_responseData.Count / (float)Settings.MaxRequests * 100)
-            : (int)(TotalTimeTimer.ElapsedMilliseconds / Settings.Duration!.Value.TotalMilliseconds * 100);
-
-        accumulatedErrors = 0;
-        accumulatedLatency = 0f;
-        accumulatedRequests = 0;
-        timer.Restart();
-    }
-
-    public void RunTest()
+    /// <summary>
+    /// Runs the phase prepared by <see cref="PrepareForTest"/>: opens the start gate, collects
+    /// the clients' results until the phase ends, then makes sure nothing is left in flight.
+    /// </summary>
+    public async Task RunTest()
     {
         Console.Out.WriteLine("Starting clients...");
-        StartClients.Set();
 
-        // Track the starting count for multi-phase assertion (data accumulates across phases)
-        var phaseStartCount = _responseData.Count;
-        
         // Don't clear _responseData - accumulate across phases for multi-phase YAML tests
         TotalTimeTimer.Restart();
-        
+        _phaseStartedAt = _timeProvider.GetTimestamp();
+
         // Start global timer only once (spans all phases for report timeline)
         if (!GlobalTimeTimer.IsRunning)
+        {
+            GlobalStartUtc = DateTime.UtcNow;
             GlobalTimeTimer.Start();
+        }
+
+        // The duration counts from the moment the gate opens, not from PrepareForTest.
+        using var phaseEnd = Settings.Duration is { } duration
+            ? _timeProvider.CreateTimer(static cts => ((CancellationTokenSource)cts!).Cancel(), Clientcts,
+                duration, Timeout.InfiniteTimeSpan)
+            : null;
+        _startGate.TrySetResult();
 
         Task? autoTuneTask = null;
         if (Settings.AutoTune != null)
@@ -379,100 +390,157 @@ internal sealed class Manager : IDisposable
             autoTuneTask = Task.Run(() => RunAutoTuneAsync(Settings.AutoTune));
         }
 
-        var timer = Stopwatch.StartNew();
-        var accumulatedErrors = 0;
-        var accumulatedMeanLatency = 0f;
-        var accumulatedRequests = 0;
+        var reader = _results.Reader;
+        var interval = new IntervalStats();
+        using var ticker = new PeriodicTimer(TimeSpan.FromSeconds(1), _timeProvider);
+        var tick = ticker.WaitForNextTickAsync().AsTask();
+        var readable = reader.WaitToReadAsync().AsTask();
+        var clientsDone = _clientsDone.Task;
+
+        // The loop sleeps until a result arrives, a second passes or the last client stops.
+        // Results are read before a tick is handled, so a progress line covers everything that had
+        // arrived when its second ended.
         while (true)
         {
-            // we're done?
-            if (!Clientcts.IsCancellationRequested &&
-                Settings.MaxRequests.HasValue && Settings.MaxRequests == (_responseData.Count - phaseStartCount))
-                Clientcts.Cancel();
-            if (Settings.Duration.HasValue && TotalTimeTimer.Elapsed > Settings.Duration)
-                Clientcts.Cancel();
+            await Task.WhenAny(readable, tick, clientsDone).ConfigureAwait(false);
 
-            if (Settings.Duration.HasValue)
+            if (readable.IsCompleted)
             {
-                if (RequestMessageQueue.Count < _topupSettings.WarningLimit)
-                {
-                    _logger.LogWarning("Too few topups, request queue too low");
-                    _topupSettings = _topupSettings with { TopupAmount = _topupSettings.TopupAmount + 1000 };
-                    TopUpRequestQueue(_topupSettings.TopupAmount);
-                }
-
-                // top up requests (once we are not filling up the queue at once)
-                if (RequestMessageQueue.Count < _topupSettings.TopupLimit)
-                {
-                    TopUpRequestQueue(_topupSettings.TopupAmount);
-                }
+                ReadAvailable(reader, ref interval);
+                readable = reader.WaitToReadAsync().AsTask();
             }
 
-
-            if (Clientcts.IsCancellationRequested && ResponseMessageQueue.IsEmpty) break; // quit testing
-
-            DequeueAndAccumulate(ref accumulatedRequests, ref accumulatedErrors, ref accumulatedMeanLatency);
-            if (timer.Elapsed.TotalSeconds >= 1)
+            if (tick.IsCompleted)
             {
-                UpdateReport(ref timer, ref accumulatedRequests, ref accumulatedErrors, ref accumulatedMeanLatency);
+                PublishProgress(ref interval);
+                tick = ticker.WaitForNextTickAsync().AsTask();
             }
+
+            if (clientsDone.IsCompleted) break;
         }
 
-        Debug.Assert(ResponseMessageQueue.IsEmpty);
-        UpdateReport(ref timer, ref accumulatedRequests, ref accumulatedErrors, ref accumulatedMeanLatency);
-        Debug.Assert(_responseData.Count - phaseStartCount == GetProgress.Requests);
-
-        _averageRps = (int)(GetProgress.Requests / TotalTimeTimer.Elapsed.TotalSeconds);
-
-        _done.Set();
-        TotalTimeTimer.Stop();
-
+        // Phase end: cancel what is still in flight, wait for every client to stop, and only then
+        // complete the channel, so no result can be written after the final drain. A result that
+        // arrived after the loop would otherwise be counted in the next phase.
+        Clientcts.Cancel();
         if (autoTuneTask != null)
         {
             try
             {
-                autoTuneTask.Wait(TimeSpan.FromSeconds(1));
+                await autoTuneTask.WaitAsync(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
             }
             catch
             {
                 // ignore
             }
         }
+
+        await Task.WhenAll(_clientTasks).ConfigureAwait(false);
+        _results.Writer.Complete();
+        ReadAvailable(reader, ref interval);
+        PublishProgress(ref interval);
+
+        _averageRps = (int)(GetProgress.Requests / TotalTimeTimer.Elapsed.TotalSeconds);
+        TotalTimeTimer.Stop();
     }
 
-    private void DequeueAndAccumulate(ref int accumulatedRequests, ref int accumulatedErrors,
-        ref float accumulatedMeanLatency)
+    private void ReadAvailable(ChannelReader<DataPoint> reader, ref IntervalStats interval)
     {
-        var results = new List<DataPoint>();
-        while (!ResponseMessageQueue.IsEmpty)
-        {
-            if (!ResponseMessageQueue.TryDequeue(out var res))
-                continue;
-            results.Add(res);
-        }
-
-        accumulatedRequests += results.Count;
-
-        if (results.Count > 0)
-            Interlocked.Add(ref _totalRequests, results.Count);
-
-        var intervalErrors = 0;
-
-        foreach (var data in results)
+        var requests = 0;
+        var errors = 0;
+        while (reader.TryRead(out var data))
         {
             _responseData.Add(data);
+            requests++;
             if (data.IsError())
             {
-                accumulatedErrors++;
-                intervalErrors++;
+                errors++;
+            }
+            else
+            {
+                interval.OkRequests++;
+                interval.OkLatencyMs += data.ResponseTime.TotalMilliseconds;
             }
         }
 
-        if (intervalErrors > 0)
-            Interlocked.Add(ref _totalErrors, intervalErrors);
+        if (requests == 0) return;
 
-        accumulatedMeanLatency += (float)results.Where(x => !x.IsError())
-            .Sum(x => x.ResponseTime.TotalMilliseconds);
+        interval.Requests += requests;
+        Interlocked.Add(ref _totalRequests, requests);
+        if (errors > 0)
+            Interlocked.Add(ref _totalErrors, errors);
+    }
+
+    private void PublishProgress(ref IntervalStats interval)
+    {
+        var requests = (int)Volatile.Read(ref _totalRequests);
+        var errors = (int)Volatile.Read(ref _totalErrors);
+        GetProgress = new Progress
+        {
+            Requests = requests,
+            ErrorRatio = requests > 0 ? (float)errors / requests : 0f,
+            Rps = interval.Requests,
+            MeanLatency = interval.OkRequests > 0 ? (float)(interval.OkLatencyMs / interval.OkRequests) : 0f,
+            PercentDone = PercentDone(requests),
+            CancelledAtPhaseEnd = (int)Volatile.Read(ref _cancelledAtPhaseEnd)
+        };
+        interval = default;
+    }
+
+    private int PercentDone(int phaseRequests)
+    {
+        // The duration share follows the same clock as the duration timer, so both agree on the end.
+        var done = Settings.MaxRequests is > 0 and var max
+            ? phaseRequests * 100L / max
+            : (long)(_timeProvider.GetElapsedTime(_phaseStartedAt) / Settings.Duration!.Value * 100);
+        return (int)Math.Min(100, done);
+    }
+}
+
+/// <summary>
+/// What every request of a phase looks like. Clients build each request from it just before
+/// sending it, so no request message exists ahead of its turn.
+/// </summary>
+internal sealed class RequestTemplate
+{
+    private readonly HttpMethod _method;
+    private readonly Uri _target;
+    private readonly KeyValuePair<string, string>[] _headers;
+    private readonly object? _jsonContent;
+
+    public RequestTemplate(Settings settings)
+    {
+        _method = settings.Method?.ToUpperInvariant() switch
+        {
+            "GET" => HttpMethod.Get,
+            "POST" => HttpMethod.Post,
+            "PUT" => HttpMethod.Put,
+            "DELETE" => HttpMethod.Delete,
+            "PATCH" => HttpMethod.Patch,
+            "HEAD" => HttpMethod.Head,
+            "OPTIONS" => HttpMethod.Options,
+            null => HttpMethod.Get,
+            _ => HttpMethod.Get
+        };
+        _target = new Uri(settings.Target ?? throw new ArgumentException("Target is missing."),
+            UriKind.RelativeOrAbsolute);
+        _headers = settings.Headers is { Count: > 0 } headers ? [.. headers] : [];
+        _jsonContent = settings.JsonContent;
+    }
+
+    public HttpRequestMessage Build()
+    {
+        var req = new HttpRequestMessage(_method, _target);
+        foreach (var (name, value) in _headers)
+            req.Headers.Add(name, value);
+
+        if (_jsonContent != null)
+        {
+            req.Content = JsonContent.Create(_jsonContent);
+            req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        }
+
+        return req;
     }
 }
 
@@ -483,4 +551,9 @@ internal sealed class Progress
     public float MeanLatency { get; set; }
     public int Rps { get; set; }
     public float ErrorRatio { get; set; }
+
+    /// <summary>
+    /// Requests still in flight when the phase ended. They are not in the results.
+    /// </summary>
+    public int CancelledAtPhaseEnd { get; set; }
 }

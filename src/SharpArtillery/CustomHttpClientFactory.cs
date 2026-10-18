@@ -11,12 +11,12 @@ internal sealed class CustomHttpClientFactory : ICustomHttpClientFactory, IDispo
 
     public CustomHttpClientFactory(ArtilleryConfig settings)
     {
+        MaxConnectionsPerServer = MaxUsers(settings);
         var socketHandler = new SocketsHttpHandler
         {
             PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
             PooledConnectionLifetime = Timeout.InfiniteTimeSpan,
-            // TODO: maybe should scale with the number of concurrent clients?
-            MaxConnectionsPerServer = 200,
+            MaxConnectionsPerServer = MaxConnectionsPerServer,
         };
 
         _client = new HttpClient(socketHandler, true);
@@ -24,6 +24,31 @@ internal sealed class CustomHttpClientFactory : ICustomHttpClientFactory, IDispo
         {
             _client.DefaultRequestHeaders.Add(name, val);
         }
+    }
+
+    /// <summary>
+    /// One pooled connection per user the run can reach. A user has at most one request in flight,
+    /// so more connections would sit idle, and fewer would make users queue in the pool and report
+    /// the pool's wait as the server's latency.
+    /// </summary>
+    internal int MaxConnectionsPerServer { get; }
+
+    private static int MaxUsers(ArtilleryConfig settings)
+    {
+        var users = settings.Vu;
+
+        // Auto-tune adds clients up to its maximum; the defaults live in ToSettings.
+        if (settings.ToSettings().AutoTune is { } autoTune)
+            users = Math.Max(users, autoTune.MaxClients);
+
+        var phases = settings.YamlConfig?.GetPhases();
+        if (phases != null)
+        {
+            foreach (var phase in phases)
+                users = Math.Max(users, phase.Vu);
+        }
+
+        return Math.Max(1, users);
     }
 
     public HttpClient CreateClient() => _client;

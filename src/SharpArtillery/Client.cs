@@ -35,7 +35,7 @@ internal sealed class Client
     {
         try
         {
-            _manager.StartClients.WaitOne();
+            await _manager.Started.WaitAsync(cancellationToken).ConfigureAwait(false);
 
             // Initialize rate limiter if RPS limiting is enabled
             if (_manager.ConstantRps.HasValue && _manager.ConstantRps.Value > 0)
@@ -46,9 +46,11 @@ internal sealed class Client
                     _clientIndex);
             }
 
-            var isDurationMode = _manager.Settings.Duration.HasValue;
-            // TODO: should set in a more global kill switch here, so that if cancellation is requested, but
-            // we failed on dequeue, then we will want to try to dequeue again
+            var httpClient = _httpClientFactory.CreateClient();
+            var template = _manager.RequestTemplate;
+            var requestTimeout = _manager.Settings.RequestTimeout ?? TimeSpan.FromSeconds(5);
+            var results = _manager.ResultWriter;
+
             while (!cancellationToken.IsCancellationRequested)
             {
                 // Apply rate limiting if enabled (wait for our turn)
@@ -57,32 +59,23 @@ internal sealed class Client
                     await _rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
                 }
 
-                if (!_manager.RequestMessageQueue.TryDequeue(out var req))
-                {
-                    if (!isDurationMode)
-                        break;
+                // The slot is claimed right before the send, so a max-requests phase sends exactly
+                // that many however many clients race for the last ones.
+                if (!_manager.TryClaimRequest())
+                    break;
 
-                    // Duration mode should keep running until cancellation; if the queue is briefly empty,
-                    // back off and allow the manager to top up.
-                    // TODO: we should log a warning as this could mean that the clients are not keeping up
-                    _logger.LogWarning("Request queue is empty, clients may not be keeping up.");
-                    await Task.Delay(10, cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-
+                using var req = template.Build();
                 var requestResults = new DataPoint
                 {
-                    StartTime = DateTime.UtcNow,
-                    PhaseName = _manager.Settings.PhaseName
+                    PhaseName = _manager.Settings.PhaseName,
+                    RequestContentLengthBytes = req.Content?.Headers.ContentLength
                 };
-                requestResults.RequestSentTime = requestResults.StartTime;
 
-                requestResults.RequestContentLengthBytes = req.Content?.Headers.ContentLength;
+                var startedAt = Stopwatch.GetTimestamp();
                 try
                 {
                     using var c = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                    var httpClient = _httpClientFactory.CreateClient();
-                    c.CancelAfter(_manager.Settings.RequestTimeout ?? TimeSpan.FromSeconds(5));
+                    c.CancelAfter(requestTimeout);
 
                     using var res = await httpClient
                         .SendAsync(req, HttpCompletionOption.ResponseHeadersRead, c.Token)
@@ -92,9 +85,16 @@ internal sealed class Client
                     requestResults.ProtocolVersion = res.Version.ToString();
                     requestResults.ResponseContentLengthBytes = res.Content.Headers.ContentLength;
                 }
-                catch (OperationCanceledException oce) when (!cancellationToken.IsCancellationRequested)
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
-                    // Linked CTS was likely canceled by per-request timeout.
+                    // The phase ended while this request was in flight. It has no outcome, so it is
+                    // counted as cancelled rather than recorded as a failed request.
+                    _manager.CountCancelledAtPhaseEnd();
+                    break;
+                }
+                catch (OperationCanceledException oce)
+                {
+                    // Linked CTS was canceled by the per-request timeout.
                     requestResults.Status = 0;
                     requestResults.IsTimeout = true;
                     requestResults.ErrorType = "timeout";
@@ -122,26 +122,21 @@ internal sealed class Client
                     requestResults.ExceptionType = e.GetType().FullName;
                     requestResults.Error = e.Message;
                 }
-                finally
-                {
-                    req.Dispose();
-                }
 
-                requestResults.RequestReceivedTime = DateTime.UtcNow;
-                requestResults.EndTime = DateTime.UtcNow;
-                requestResults.ResponseTime = requestResults.EndTime - requestResults.StartTime;
-                requestResults.Latency = requestResults.ResponseTime;
+                // One stopwatch reading gives the latency; the DateTimes are derived from it and the
+                // run's start, so start, end and latency always agree.
+                var latency = Stopwatch.GetElapsedTime(startedAt);
+                requestResults.ResponseTime = latency;
+                requestResults.Latency = latency;
                 // Use GlobalTimeTimer for report timeline (spans all phases)
                 requestResults.RequestTimeLine = _manager.GlobalTimeTimer.Elapsed;
-                
-                _manager.ResponseMessageQueue.Enqueue(requestResults); 
+                requestResults.EndTime = _manager.GlobalStartUtc + requestResults.RequestTimeLine;
+                requestResults.RequestReceivedTime = requestResults.EndTime;
+                requestResults.StartTime = requestResults.EndTime - latency;
+                requestResults.RequestSentTime = requestResults.StartTime;
+
+                results.TryWrite(requestResults);
             }
-            // sleep before killing thread to just let everything cool
-            await Task.Delay(1000, cancellationToken).ConfigureAwait(false);
-        }
-        catch (AggregateException ae)
-        {
-            _logger.LogError("Client error: {Message}", ae.Message);
         }
         catch (OperationCanceledException)
         {
@@ -150,6 +145,10 @@ internal sealed class Client
         catch (Exception e)
         {
             _logger.LogError("Client error: {Message}", e.Message);
+        }
+        finally
+        {
+            _manager.ClientFinished();
         }
     }
 }
