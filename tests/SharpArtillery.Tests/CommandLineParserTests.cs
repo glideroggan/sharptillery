@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Microsoft.Extensions.Hosting;
 using Xunit;
@@ -54,14 +56,15 @@ public class HeaderParsingTests
         Assert.Equal("", headers["A"]);
     }
 
-    // Today a header without a colon, or with nothing before it, is dropped without a word.
-    // Slice 3 turns the missing colon into an error.
+    // A header needs the Name:Value shape. Before slice 3 these were dropped without a word; now
+    // the parser reports them as errors, so the run never starts without the header the user typed.
     [Theory]
     [InlineData("NoColon")]
     [InlineData(":value")]
-    public void An_entry_without_a_name_is_skipped(string header)
+    [InlineData("   :value")]
+    public void A_header_without_a_colon_or_a_name_is_an_error(string header)
     {
-        Assert.Empty(Parse(header));
+        Assert.Throws<ArgumentException>(() => Parse(header));
     }
 
     [Fact]
@@ -90,6 +93,11 @@ public class CommandLineValidatorTests
     [InlineData("-y", "config.yaml")]
     [InlineData("-t", "http://localhost/x", "-d", "00:00:05", "-A")]
     [InlineData("-t", "http://localhost/x", "-n", "1", "-o", "report", "-e", "html")]
+    [InlineData("-t", "http://localhost/x", "-n", "1", "-m", "get")]
+    [InlineData("-t", "http://localhost/x", "-n", "1", "-m", "POST", "-b", "{\"a\":1}")]
+    [InlineData("-t", "http://localhost/x", "-n", "1", "-m", "POST", "-b", "{\"name\":\"O'Brien\"}")]
+    [InlineData("-t", "http://localhost/x", "-n", "1", "-H", "Content-Type:application/json")]
+    [InlineData("-t", "http://localhost/x", "-d", "00:00:05", "-A", "-M", "10", "-S", "2", "-I", "00:00:01", "-E", "0")]
     public void Valid_arguments_have_no_errors(params string[] args)
     {
         Assert.Empty(Errors(args));
@@ -151,14 +159,126 @@ public class CommandLineValidatorTests
         Assert.Contains("Auto-tune (-A/--autotune) is not supported with max requests (-n/--requests).", errors);
     }
 
-    // Red for slice 3: today `-e excel` passes the parser, maps to .xlsx and throws
-    // NotImplementedException in MainService.WriteReportAsync after the whole run.
-    [Fact(Skip = "slice 3")]
+    // Today `-e excel` passes the parser, maps to .xlsx and throws NotImplementedException in
+    // MainService.WriteReportAsync after the whole run. Only html is accepted until slice 6.
+    [Theory]
+    [InlineData("excel")]
+    [InlineData("csv")]
+    [InlineData("xlsx")]
     [Trait("slice", "3")]
-    public void An_unsupported_report_type_is_a_parse_error()
+    public void An_unsupported_report_type_is_a_parse_error(string extension)
     {
-        var errors = Errors("-t", "http://localhost/x", "-n", "1", "-o", "report", "-e", "excel");
+        var errors = Errors("-t", "http://localhost/x", "-n", "1", "-o", "report", "-e", extension);
 
         Assert.NotEmpty(errors);
+    }
+
+    // Today an unknown method is sent as GET without a word.
+    [Theory]
+    [InlineData("FETCH")]
+    [InlineData("CONNECT")]
+    [Trait("slice", "3")]
+    public void An_unknown_method_is_a_parse_error(string method)
+    {
+        var errors = Errors("-t", "http://localhost/x", "-n", "1", "-m", method);
+
+        Assert.NotEmpty(errors);
+    }
+
+    // Today the auto-tune values are only checked inside the run, where the error is swallowed.
+    [Theory]
+    [InlineData("-M", "0")]
+    [InlineData("-S", "0")]
+    [InlineData("-I", "00:00:00")]
+    [InlineData("-E", "2")]
+    [Trait("slice", "3")]
+    public void An_auto_tune_value_out_of_range_is_a_parse_error(string option, string value)
+    {
+        var errors = Errors("-t", "http://localhost/x", "-d", "00:00:05", "-A", option, value);
+
+        Assert.NotEmpty(errors);
+    }
+
+    // Today a body that is not JSON fails in BuildConfig, after the parser has accepted the command.
+    [Theory]
+    [InlineData("{bad")]
+    [InlineData("{\"a\":")]
+    [Trait("slice", "3")]
+    public void A_body_that_is_not_json_is_a_parse_error(string body)
+    {
+        var errors = Errors("-t", "http://localhost/x", "-n", "1", "-m", "POST", "-b", body);
+
+        Assert.NotEmpty(errors);
+    }
+
+    // Today a header without a colon is dropped without a word.
+    [Theory]
+    [InlineData("NoColon")]
+    [InlineData(":value")]
+    [Trait("slice", "3")]
+    public void A_header_without_a_colon_or_a_name_is_a_parse_error(string header)
+    {
+        var errors = Errors("-t", "http://localhost/x", "-n", "1", "-H", header);
+
+        Assert.NotEmpty(errors);
+    }
+
+    // Runs the parse with a Swedish culture, where the decimal separator is a comma.
+    private static List<string> ErrorsInSwedish(params string[] args)
+    {
+        var saved = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("sv-SE");
+        try
+        {
+            return Errors(args);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = saved;
+        }
+    }
+
+    // Audit of slice 3: a value that could not be converted crashed the parse with
+    // InvalidOperationException ("Cannot parse argument ...") because a validator read it.
+    [Theory]
+    [InlineData("-t", "http://localhost/x", "-d", "00:00:01", "-A", "-M", "abc")]
+    [InlineData("-t", "http://localhost/x", "-d", "00:00:01", "-A", "-S", "abc")]
+    [InlineData("-t", "http://localhost/x", "-d", "00:00:01", "-A", "-I", "bad")]
+    [InlineData("-t", "http://localhost/x", "-d", "00:00:01", "-A", "-E", "abc")]
+    [InlineData("-t", "http://localhost/x", "-n", "1", "-m", "abc", "-M", "abc")]
+    [InlineData("-t", "http://localhost/x", "-d", "bad")]
+    [InlineData("-t", "http://localhost/x", "-n", "abc")]
+    [InlineData("-t", "http://localhost/x", "-d", "bad", "-A")]
+    [Trait("slice", "3")]
+    public void A_value_that_cannot_be_parsed_is_a_parse_error_not_a_crash(params string[] args)
+    {
+        var errors = ErrorsInSwedish(args);
+
+        // The parser's own error names the value it could not read.
+        Assert.Contains(errors, e => e.Contains("'abc'") || e.Contains("'bad'"));
+    }
+
+    // A value that cannot be parsed gives its own error, not also one saying the option is missing.
+    [Theory]
+    [InlineData("-d", "bad")]
+    [InlineData("-n", "abc")]
+    [Trait("slice", "3")]
+    public void A_bad_requests_or_duration_value_does_not_also_report_it_missing(string option, string value)
+    {
+        var errors = ErrorsInSwedish("-t", "http://localhost/x", option, value);
+
+        Assert.DoesNotContain("Must specify -n/--requests, -d/--duration, or -y/--yaml.", errors);
+    }
+
+    // The help text gives the error ratio with a dot (0.02), so a dot works whatever the PC's culture.
+    [Theory]
+    [InlineData("0.05")]
+    [InlineData("0,05")]
+    [Trait("slice", "3")]
+    public void The_auto_tune_error_ratio_takes_a_dot_on_a_swedish_pc(string value)
+    {
+        var errors = ErrorsInSwedish("-t", "http://localhost/x", "-d", "00:00:01", "-A", "-E", value);
+
+        Assert.Empty(errors);
     }
 }

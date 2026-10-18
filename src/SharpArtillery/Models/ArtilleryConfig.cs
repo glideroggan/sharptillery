@@ -47,6 +47,7 @@ public class ArtilleryConfig
     /// <param name="methodOverride">Optional HTTP method override (e.g., from YAML flow step)</param>
     /// <param name="headersOverride">Optional headers override (e.g., from YAML flow step)</param>
     /// <param name="jsonContentOverride">Optional JSON body override (e.g., from YAML flow step)</param>
+    /// <param name="rawBodyOverride">Optional raw body override (e.g., from a YAML blast step's body)</param>
     internal Settings ToSettings(
         string? targetOverride = null,
         int? vuOverride = null,
@@ -55,7 +56,8 @@ public class ArtilleryConfig
         string? phaseName = null,
         string? methodOverride = null,
         Dictionary<string, string>? headersOverride = null,
-        object? jsonContentOverride = null)
+        object? jsonContentOverride = null,
+        string? rawBodyOverride = null)
     {
         // Merge headers: YAML headers override/extend CLI headers
         var mergedHeaders = new Dictionary<string, string>(Headers);
@@ -74,6 +76,7 @@ public class ArtilleryConfig
             Method = methodOverride ?? Method,
             Headers = mergedHeaders,
             JsonContent = jsonContentOverride ?? JsonContent,
+            RawBody = rawBodyOverride,
             ConstantRps = ConstantRps,
             RequestTimeout = RequestTimeout,
             PhaseName = phaseName,

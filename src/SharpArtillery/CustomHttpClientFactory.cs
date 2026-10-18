@@ -22,6 +22,9 @@ internal sealed class CustomHttpClientFactory : ICustomHttpClientFactory, IDispo
         _client = new HttpClient(socketHandler, true);
         foreach (var (name, val) in settings.Headers)
         {
+            // Content-* headers belong on each request's content (RequestTemplate); the request
+            // headers here would throw "Misused header name" for them.
+            if (RequestTemplate.IsContentHeader(name)) continue;
             _client.DefaultRequestHeaders.Add(name, val);
         }
     }
