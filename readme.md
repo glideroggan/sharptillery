@@ -33,11 +33,11 @@ Use `-n` instead of `-d` to send a fixed number of requests. Use `-d` or `-n`, n
 | `-n, --requests` | Maximum number of requests |
 | `-d, --duration` | Run length, `HH:MM:SS` |
 | `-T, --timeout` | Per-request timeout, `HH:MM:SS`, default 5 seconds |
-| `-m, --method` | HTTP method: GET, POST or PUT |
-| `-b, --body` | JSON body content |
-| `-H, --header` | Header as `Name:Value`, can be repeated |
+| `-m, --method` | HTTP method: GET, POST, PUT, DELETE, PATCH, HEAD or OPTIONS (default GET); any other value is an error |
+| `-b, --body` | JSON body content; single quotes may stand for double quotes around strings. Invalid JSON is an error |
+| `-H, --header` | Header as `Name:Value`, can be repeated. A value without a colon or without a name is an error. `Content-*` headers (such as `Content-Type`) go on the request body |
 | `-o, --output` | Report name without extension (writes an HTML report) |
-| `-e, --extension` | Report type, `html` |
+| `-e, --extension` | Report type, `html` (the only one for now); any other value is an error |
 | `-y, --yaml` | Run a YAML scenario file (see below) |
 | `-r, --rps` | Target requests per second, spread across the clients |
 | `-A, --autotune` | Find the highest sustainable RPS (duration mode only) |
