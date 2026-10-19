@@ -8,8 +8,6 @@ namespace SharpArtillery.Configs;
 public class ArtilleryConfig
 {
     // CLI-specific properties (not mapped to Settings)
-    public bool ShowInfo { get; set; }
-    public bool Quit { get; set; }
     public string? Yaml { get; set; }
     public ConfigRoot? YamlConfig { get; set; }
     public ReportSettings ReportSettings { get; } = new();
@@ -31,9 +29,6 @@ public class ArtilleryConfig
     public int? AutoTuneStep { get; set; }
     public TimeSpan? AutoTuneInterval { get; set; }
     public float? AutoTuneMaxErrorRatio { get; set; }
-
-    // Unused legacy property
-    public int? RequestRate { get; set; }
 
     /// <summary>
     /// Converts CLI config to runtime Settings.
