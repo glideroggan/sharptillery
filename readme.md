@@ -112,7 +112,7 @@ Not supported, and an error when the file has it:
 - several scenarios (weighted scenarios); `weight` on the one scenario is accepted and has no effect;
 - Artillery's arrival-rate phases: `arrivalRate`, `arrivalCount`, `rampTo`, `maxVusers`;
 - `excludeGraph`: every phase is in the report;
-- `settings.report` other than `html`.
+- `settings.report` other than `html` or `csv`.
 
 ## Development
 

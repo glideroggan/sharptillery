@@ -125,6 +125,23 @@ internal sealed partial class YamlHelper
             errors.Add($"YAML file '{path}': settings.report: Unsupported report type: '{report}'. Use html or csv.");
         }
 
+        // Every run sends its requests to settings.target, so a file without one cannot run.
+        if (string.IsNullOrEmpty(root.Settings?.Target))
+        {
+            errors.Add($"YAML file '{path}': settings.target is missing. Give the base URL there, " +
+                       "for example target: \"http://localhost:8080\".");
+        }
+
+        // A bare "-" in a flow is an empty step: it is neither a request nor a think, so the run cannot use it.
+        if (root.Scenarios is { Count: > 0 } scenarioList && scenarioList[0]?.Flow is { } steps)
+        {
+            for (var i = 0; i < steps.Count; i++)
+            {
+                if (steps[i] is null)
+                    errors.Add($"YAML file '{path}': Flow step {i + 1} is empty. Give it get, post, put, delete or think.");
+            }
+        }
+
         // A phase needs users and an end. A request count of zero or less is no count, as in the run.
         var phases = root.GetPhases() ?? new List<Phase>();
         for (var i = 0; i < phases.Count; i++)
@@ -141,6 +158,9 @@ internal sealed partial class YamlHelper
                 errors.Add($"YAML file '{path}': {label} needs vu of at least 1.");
             if (phase.Duration == null && phase.Requests is not > 0)
                 errors.Add($"YAML file '{path}': {label} needs duration or requests.");
+            // Blast mode would refuse this only at run time, after the earlier phases had sent their requests.
+            if (phase.Duration != null && phase.Requests is > 0)
+                errors.Add($"YAML file '{path}': {label} has both duration and requests. Give it one.");
         }
 
         return errors;

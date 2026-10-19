@@ -369,21 +369,80 @@ public sealed class YamlConfigTests : IDisposable
 
         var (config, errors) = YamlHelper.Load(path);
 
-        Assert.Empty(errors);
         Assert.NotNull(config!.Settings);
         Assert.Null(config.Settings.Target);
+        Assert.Contains(errors, e => e.Contains("settings.target"));
+    }
+
+    // Slice 8 fix: a file without settings.target is refused at parse time, with one line, instead of
+    // an InvalidOperationException with a stack trace from the run.
+    [Fact]
+    [Trait("slice", "8")]
+    public void A_bare_settings_key_is_refused_at_parse_time_naming_the_target()
+    {
+        var path = File("settings:\n" + OnePhase + "\n" + OneGet);
+
+        Assert.Contains("settings.target", Assert.Single(Errors("-y", path)));
     }
 
     [Fact]
     [Trait("slice", "8")]
-    public async Task A_bare_settings_key_stops_the_run_with_the_missing_target_message()
+    public void Settings_without_a_target_is_refused_at_parse_time()
     {
-        var path = File("settings:\n" + OnePhase + "\n" + OneGet);
-        var flags = new ArtilleryConfig { YamlConfig = YamlHelper.ReadYaml(path) };
-        using var factory = new StubHttpClientFactory(StubHttpHandler.Returning(HttpStatusCode.OK));
+        var path = File("settings:\n  timeout: 5\n" + OnePhase + "\n" + OneGet);
 
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new MainService(NullLoggerFactory.Instance).Run(flags, factory));
-        Assert.Contains("settings.target", error.Message);
+        Assert.Contains("settings.target", Assert.Single(Errors("-y", path)));
+    }
+
+    // Pins the shipped flow example: it must keep parsing as written.
+    [Fact]
+    [Trait("slice", "8")]
+    public void The_shipped_flow_config_has_no_errors()
+    {
+        var dir = AppContext.BaseDirectory;
+        string? found = null;
+        for (var d = new DirectoryInfo(dir); d != null && found == null; d = d.Parent)
+        {
+            var candidate = Path.Combine(d.FullName, "src", "SharpArtillery", "config-flow-test.yaml");
+            if (System.IO.File.Exists(candidate)) found = candidate;
+        }
+
+        Assert.NotNull(found);
+        Assert.Empty(Errors("-y", found!));
+    }
+
+    // Red for slice 8: a null flow step (a bare "-") crashed the -r check in the parser with a NullReferenceException.
+    [Fact]
+    [Trait("slice", "8")]
+    public void An_empty_flow_step_is_a_named_error_even_with_rps()
+    {
+        var path = File(Settings + "\n" + OnePhase + "\n" + """
+            scenarios:
+              - name: "s"
+                flow:
+                  -
+            """);
+
+        Assert.Contains("Flow step 1", Assert.Single(Errors("-y", path, "-r", "10")));
+    }
+
+    // Red for slice 8: a phase with both duration and requests ran its first blast phase before the error.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("slice", "8")]
+    public void A_phase_with_both_duration_and_requests_is_an_error_that_names_it(bool flow)
+    {
+        var path = File(Settings + "\n" + """
+            phases:
+              - name: "Both"
+                duration: 5
+                requests: 5
+                vu: 2
+            """ + "\n" + (flow ? TwoGets : OneGet));
+
+        var error = Assert.Single(Errors("-y", path));
+        Assert.Contains("'Both'", error);
+        Assert.Contains("both duration and requests", error);
     }
 }
