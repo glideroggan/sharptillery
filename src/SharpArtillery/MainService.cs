@@ -351,6 +351,8 @@ public sealed class MainService
         var phaseRps = manager.AverageRps;
         var phaseErrors = manager.GetProgress.ErrorRatio * 100;
         var phaseCancelled = manager.GetProgress.CancelledAtPhaseEnd;
+        if (manager.RateShortfall is { } shortfall)
+            Console.Out.WriteLine($"[{phaseLabel}] {shortfall}");
         Console.Out.WriteLine($"=== {phaseLabel} completed: {phaseRequests} requests, {phaseRps} avg RPS, {phaseErrors:F}% errors, {phaseCancelled} cancelled at phase end ===\n");
         return phaseCancelled;
     }
@@ -386,6 +388,10 @@ public sealed class MainService
         reporter.PrintSummary();
         Console.Out.WriteLine($"Cancelled at phase end: {manager.GetProgress.CancelledAtPhaseEnd}");
         reporter.PrintPercentiles();
+
+        // Last, so a target that was not reached is the run's final word rather than lost above the table.
+        if (manager.RateShortfall is { } shortfall)
+            Console.Out.WriteLine(shortfall);
     }
 
 

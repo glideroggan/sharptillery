@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -44,16 +45,26 @@ internal sealed class Manager : IDisposable
     private readonly ICustomHttpClientFactory _httpClientFactory;
     private readonly TimeProvider _timeProvider;
     private long _phaseStartedAt;
+    private RateSchedule? _rateSchedule;
+
+    // Every result of the phase, errors included: each one kept its client busy for that long.
+    private long _phaseLatencyTicks;
 
     /// <summary>
-    /// Exposes rate limiting config for clients to create their own rate limiters.
+    /// The phase's <c>-r</c> schedule that every client takes its slots from; null without <c>-r</c>.
     /// </summary>
-    public int? ConstantRps => Settings.ConstantRps;
+    internal RateSchedule? RateSchedule => _rateSchedule;
 
     /// <summary>
-    /// Number of active clients (used by rate limiters for per-client interval calculation).
+    /// The run's clock: the clients' rate waits and latencies, the duration timer and the progress ticker.
     /// </summary>
-    public int ClientCount => _clients.Count;
+    internal TimeProvider TimeProvider => _timeProvider;
+
+    /// <summary>
+    /// After a phase with <c>-r</c> whose clients could not keep up, the one line that says what was reached
+    /// and why; null when the target was reached or there was none.
+    /// </summary>
+    public string? RateShortfall { get; private set; }
 
     private readonly List<Client> _clients = new();
     private readonly List<Task> _clientTasks = new();
@@ -135,6 +146,9 @@ internal sealed class Manager : IDisposable
         Interlocked.Exchange(ref _totalErrors, 0);
         Interlocked.Exchange(ref _claimedRequests, 0);
         Interlocked.Exchange(ref _cancelledAtPhaseEnd, 0);
+        _phaseLatencyTicks = 0;
+        _rateSchedule = null;
+        RateShortfall = null;
         // reset progress
         GetProgress = new();
         _results = CreateResultChannel();
@@ -153,13 +167,10 @@ internal sealed class Manager : IDisposable
         _clients.Clear();
         _clientTasks.Clear();
         for (var i = 0; i < settings.Vu; i++)
-            _clients.Add(new Client(this, _httpClientFactory, _loggerFactory, clientIndex: i));
+            _clients.Add(new Client(this, _httpClientFactory, _loggerFactory));
 
         if (settings.ConstantRps > 0)
-        {
-            var rpsPerClient = (double)settings.ConstantRps.Value / settings.Vu;
-            Console.Out.WriteLine($"Rate limiting: {settings.ConstantRps} RPS across {settings.Vu} clients ({rpsPerClient:F1} RPS/client)");
-        }
+            Console.Out.WriteLine($"Rate limiting: {settings.ConstantRps} req/s on one schedule shared by {settings.Vu} {Clients(settings.Vu)}");
 
         // activate the clients (not starting test)
         Console.Out.WriteLine("Activating clients...");
@@ -221,8 +232,7 @@ internal sealed class Manager : IDisposable
         if (count <= 0) return;
         for (var i = 0; i < count; i++)
         {
-            var clientIndex = _clients.Count; // New client gets next index
-            var client = new Client(this, _httpClientFactory, _loggerFactory, clientIndex);
+            var client = new Client(this, _httpClientFactory, _loggerFactory);
             _clients.Add(client);
             Interlocked.Increment(ref _runningClients);
             _clientTasks.Add(Task.Run(() => client.RunAsync(ClientKillToken)));
@@ -358,6 +368,11 @@ internal sealed class Manager : IDisposable
         // Don't clear _responseData - accumulate across phases for multi-phase YAML tests
         TotalTimeTimer.Restart();
         _phaseStartedAt = _timeProvider.GetTimestamp();
+        // Each phase starts its own schedule at its own start, so slots a gap between phases would owe
+        // are never sent in a burst; the clients read it once the gate below is open.
+        _rateSchedule = Settings.ConstantRps is > 0 and var rps
+            ? new RateSchedule(rps, _timeProvider, _phaseStartedAt)
+            : null;
 
         // Start global timer only once (spans all phases for report timeline)
         if (!GlobalTimeTimer.IsRunning)
@@ -430,6 +445,38 @@ internal sealed class Manager : IDisposable
 
         _averageRps = StatsUtils.AverageRps(GetProgress.Requests, TotalTimeTimer.Elapsed);
         TotalTimeTimer.Stop();
+
+        if (_rateSchedule is { FellBehind: true } schedule)
+        {
+            var requests = GetProgress.Requests;
+            var meanLatency = requests > 0 ? TimeSpan.FromTicks(_phaseLatencyTicks / requests) : TimeSpan.Zero;
+            RateShortfall = RateShortfallLine(schedule.Rps,
+                StatsUtils.AverageRps(requests, _timeProvider.GetElapsedTime(_phaseStartedAt)), Settings.Vu,
+                meanLatency);
+        }
+    }
+
+    private static string Clients(int count) => count == 1 ? "client" : "clients";
+
+    /// <summary>
+    /// What a phase that fell behind its <c>-r</c> target reached, and whether more clients would help: each
+    /// client sends one request at a time, so <paramref name="clients"/> at <paramref name="meanLatency"/> per
+    /// request can send at most clients / latency per second.
+    /// </summary>
+    internal static string RateShortfallLine(int targetRps, int reachedRps, int clients, TimeSpan meanLatency)
+    {
+        var invariant = CultureInfo.InvariantCulture;
+        var line = string.Create(invariant, $"Rate: target {targetRps} req/s, reached {reachedRps} req/s.");
+        if (meanLatency <= TimeSpan.Zero) return line;
+
+        var capacity = clients * TimeSpan.TicksPerSecond / meanLatency.Ticks;
+        var perRequest = string.Create(invariant,
+            $"{clients} {Clients(clients)} at {meanLatency.TotalMilliseconds:0.#} ms per request");
+        return capacity < targetRps
+            ? string.Create(invariant,
+                $"{line} {perRequest} can do at most {capacity} req/s; more clients (-c) can reach the target.")
+            : string.Create(invariant,
+                $"{line} {perRequest} could do {capacity} req/s, so the number of clients was not the limit.");
     }
 
     private void ReadAvailable(ChannelReader<DataPoint> reader, ref IntervalStats interval)
@@ -441,6 +488,7 @@ internal sealed class Manager : IDisposable
             _responseData.Add(data);
             Csv?.Write(data);
             requests++;
+            _phaseLatencyTicks += data.ResponseTime.Ticks;
             if (data.IsError())
             {
                 errors++;

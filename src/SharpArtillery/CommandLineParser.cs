@@ -79,7 +79,7 @@ internal static class CommandLineParser
 
         var rpsOption = new Option<int?>("--rps", "-r")
         {
-            Description = "Target requests per second (distributed smoothly across clients with jitter)"
+            Description = "Target requests per second, on one schedule shared by the clients"
         };
 
         var autoTuneOption = new Option<bool>("--autotune", "-A")

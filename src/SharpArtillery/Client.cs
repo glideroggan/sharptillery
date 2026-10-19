@@ -1,6 +1,5 @@
 #pragma warning disable CA1848
 using System;
-using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
@@ -20,13 +19,10 @@ internal sealed class Client
     private readonly Manager _manager;
     private readonly ICustomHttpClientFactory _httpClientFactory;
     private readonly ILogger<Client> _logger;
-    private readonly int _clientIndex;
-    private ClientRateLimiter? _rateLimiter;
 
-    public Client(Manager manager, ICustomHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, int clientIndex)
+    public Client(Manager manager, ICustomHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory)
     {
         _manager = manager;
-        _clientIndex = clientIndex;
         _logger = loggerFactory.CreateLogger<Client>();
         _httpClientFactory = httpClientFactory;
     }
@@ -37,15 +33,9 @@ internal sealed class Client
         {
             await _manager.Started.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-            // Initialize rate limiter if RPS limiting is enabled
-            if (_manager.ConstantRps.HasValue && _manager.ConstantRps.Value > 0)
-            {
-                _rateLimiter = new ClientRateLimiter(
-                    _manager.ConstantRps.Value,
-                    _manager.ClientCount,
-                    _clientIndex);
-            }
-
+            // Null without -r. The phase opens its schedule before the gate, so it is there once Started is.
+            var schedule = _manager.RateSchedule;
+            var clock = _manager.TimeProvider;
             var httpClient = _httpClientFactory.CreateClient();
             var template = _manager.RequestTemplate;
             var requestTimeout = _manager.Settings.RequestTimeout ?? TimeSpan.FromSeconds(5);
@@ -53,16 +43,14 @@ internal sealed class Client
 
             while (!cancellationToken.IsCancellationRequested)
             {
-                // Apply rate limiting if enabled (wait for our turn)
-                if (_rateLimiter != null)
-                {
-                    await _rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
-                }
-
-                // The slot is claimed right before the send, so a max-requests phase sends exactly
-                // that many however many clients race for the last ones.
+                // The request is claimed before its rate slot is taken, so a max-requests phase sends exactly
+                // that many however many clients race for the last ones, and no client waits for a slot it
+                // has no request for.
                 if (!_manager.TryClaimRequest())
                     break;
+
+                if (schedule != null)
+                    await schedule.WaitForSlotAsync(cancellationToken).ConfigureAwait(false);
 
                 using var req = template.Build();
                 var requestResults = new DataPoint
@@ -70,7 +58,9 @@ internal sealed class Client
                     PhaseName = _manager.Settings.PhaseName
                 };
 
-                var startedAt = Stopwatch.GetTimestamp();
+                // Latency counts from the send, also when the slot was due earlier and every client was busy:
+                // that lateness shows as the rate falling short, not as latency.
+                var startedAt = clock.GetTimestamp();
                 try
                 {
                     using var c = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -121,8 +111,9 @@ internal sealed class Client
                     requestResults.Error = e.Message;
                 }
 
-                // One stopwatch reading gives the latency, so a request never reads two clocks.
-                requestResults.ResponseTime = Stopwatch.GetElapsedTime(startedAt);
+                // One reading of the run's clock (the Stopwatch outside tests) gives the latency, so a request
+                // never reads two clocks.
+                requestResults.ResponseTime = clock.GetElapsedTime(startedAt);
                 // Use GlobalTimeTimer for report timeline (spans all phases)
                 requestResults.RequestTimeLine = _manager.GlobalTimeTimer.Elapsed;
 
