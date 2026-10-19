@@ -32,7 +32,6 @@ No open items: the YAML phase and flow work listed here is done, see Done.
 
 ## Feature completeness
 
-- [ ] Decide whether `-r` should apply to flow-mode YAML runs; today `FlowRunner` ignores it without a word (`src/SharpArtillery/FlowRunner.cs`).
 - [ ] Improve auto-tune to converge on a stable client count (supports backing off, not only scaling up) (`src/SharpArtillery/Manager.cs`).
 
 ## Diagnostics and observability
@@ -66,6 +65,7 @@ No open items: the YAML phase and flow work listed here is done, see Done.
 
 - [x] Multi-step per-client YAML flows (`get`, `post`, `put`, `delete` and `think` steps) run in order by `FlowRunner`.
 - [x] Multiple flow steps per scenario: every step runs per virtual user, not only `flow[0]`.
+- [x] `-r` with a flow YAML (several steps, a `think` or a capture) is refused at parse time, instead of `FlowRunner` ignoring it without a word. Blast-mode YAML phases keep `-r` (`src/SharpArtillery/CommandLineParser.cs`).
 - [x] `settings.phases` maps to runtime: each phase sets its own VUs, duration or requests (`src/SharpArtillery/MainService.cs`).
 - [x] Each `DataPoint` carries its phase name (`PhaseName`, `src/SharpArtillery/Client.cs`, `src/SharpArtillery/FlowExecutor.cs`), so reports group by phase.
 - [x] Results accumulate across phases instead of being overwritten (`Manager.RunTest()` keeps `_responseData`; flow mode collects every phase in `MainService.RunFlowModeAsync`).

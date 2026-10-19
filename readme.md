@@ -37,7 +37,7 @@ Use `-n` instead of `-d` to send a fixed number of requests. Use `-d` or `-n`, n
 | `-b, --body` | JSON body content; single quotes may stand for double quotes around strings. Invalid JSON is an error |
 | `-H, --header` | Header as `Name:Value`, can be repeated. A value without a colon or without a name is an error. `Content-*` headers (such as `Content-Type`) go on the request body |
 | `-o, --output` | Report name without extension: an HTML report (`name.html`), or a CSV file (`name.csv`) with `-e csv` |
-| `-e, --extension` | Report type: `html` (default) or `csv`; any other value is an error. `csv` has one row per request, written while the run goes: `timeline_ms,phase,status,latency_ms,error_type,response_bytes`. `timeline_ms` is when the answer was processed on the run's timeline, the same time the HTML report plots; `status` is 0 when there was no response |
+| `-e, --extension` | Report type: `html` (default) or `csv`; any other value is an error. `csv` has one row per request, written while the run goes: `timeline_ms,phase,status,latency_ms,error_type,response_bytes`. `timeline_ms` is when the answer was processed on the run's timeline, the same time the HTML report plots; `status` is 0 when there was no response; `response_bytes` is the response's `Content-Length` header, empty when the server sent none (a chunked answer has no `Content-Length`) |
 | `-y, --yaml` | Run a YAML scenario file (see below) |
 | `-r, --rps` | Target requests per second, on one schedule shared by the clients (see below) |
 | `-A, --autotune` | Find the highest sustainable RPS (duration mode only) |
@@ -52,7 +52,7 @@ sharptillery -t https://example.com/api/endpoint -c 10 -r 100 -d 00:00:30
 
 Each client sends one request at a time, so `-c` clients at a latency of L can send at most `-c` / L requests per second: 10 clients at 50 ms can do 200 req/s. When the clients cannot keep up, the run ends with one line that says so, for example `Rate: target 100 req/s, reached 40 req/s. 2 clients at 50 ms per request can do at most 40 req/s; more clients (-c) can reach the target.` Latency is measured from the moment a request is sent, also when it was sent late because every client was busy.
 
-`-r` applies to flags mode and to single-request YAML phases; each phase starts its own schedule. A flow YAML (several steps, a `think` or captures) does not use `-r`.
+`-r` applies to flags mode and to single-request YAML phases; each phase starts its own schedule. A flow YAML (several steps, a `think` or captures) is refused with `-r`, because a flow run has no rate schedule.
 
 ## YAML scenarios
 
@@ -93,7 +93,7 @@ The file is checked before any request is sent. A key that is not in the list be
 | Key | Meaning |
 |-----|---------|
 | `settings.target` | Base URL; each step's `url` is added to it |
-| `settings.timeout` | Per-request timeout in seconds (replaces `-T`) |
+| `settings.timeout` | Per-request timeout in seconds. A blast-mode file uses it in place of `-T`; flow mode ignores `-T` and uses `settings.timeout`, or 5 seconds when it is not set |
 | `settings.report` | Report type, as `-e`: `html` or `csv`. A typed `-e` wins, and `-o` still turns the report on |
 | `phases` | Run one after another. Each has `name`, `vu` (users) and either `duration` (seconds) or `requests` |
 | `requests` | The total for the phase, shared by its users (`requests: 2` with `vu: 5` sends 2). Think steps do not count |
