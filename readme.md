@@ -39,8 +39,20 @@ Use `-n` instead of `-d` to send a fixed number of requests. Use `-d` or `-n`, n
 | `-o, --output` | Report name without extension: an HTML report (`name.html`), or a CSV file (`name.csv`) with `-e csv` |
 | `-e, --extension` | Report type: `html` (default) or `csv`; any other value is an error. `csv` has one row per request, written while the run goes: `timeline_ms,phase,status,latency_ms,error_type,response_bytes`. `timeline_ms` is when the answer was processed on the run's timeline, the same time the HTML report plots; `status` is 0 when there was no response |
 | `-y, --yaml` | Run a YAML scenario file (see below) |
-| `-r, --rps` | Target requests per second, spread across the clients |
+| `-r, --rps` | Target requests per second, on one schedule shared by the clients (see below) |
 | `-A, --autotune` | Find the highest sustainable RPS (duration mode only) |
+
+### Rate limiting with `-r`
+
+All clients share one schedule: request n is due at the start + n / rps. A free client takes the next request and waits until it is due, so a slow response does not lower the rate as long as another client is free. When every client is busy, the requests that fall due are sent as soon as a client is free again, and the run catches up.
+
+```powershell
+sharptillery -t https://example.com/api/endpoint -c 10 -r 100 -d 00:00:30
+```
+
+Each client sends one request at a time, so `-c` clients at a latency of L can send at most `-c` / L requests per second: 10 clients at 50 ms can do 200 req/s. When the clients cannot keep up, the run ends with one line that says so, for example `Rate: target 100 req/s, reached 40 req/s. 2 clients at 50 ms per request can do at most 40 req/s; more clients (-c) can reach the target.` Latency is measured from the moment a request is sent, also when it was sent late because every client was busy.
+
+`-r` applies to flags mode and to single-request YAML phases; each phase starts its own schedule. A flow YAML (several steps, a `think` or captures) does not use `-r`.
 
 ## YAML scenarios
 

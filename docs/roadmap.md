@@ -32,7 +32,7 @@ No open items: the YAML phase and flow work listed here is done, see Done.
 
 ## Feature completeness
 
-- [ ] Implement `ConstantRps` end-to-end or remove the flag, and document the chosen behaviour (`src/SharpArtillery/Manager.cs`).
+- [ ] Decide whether `-r` should apply to flow-mode YAML runs; today `FlowRunner` ignores it without a word (`src/SharpArtillery/FlowRunner.cs`).
 - [ ] Improve auto-tune to converge on a stable client count (supports backing off, not only scaling up) (`src/SharpArtillery/Manager.cs`).
 
 ## Diagnostics and observability
@@ -95,6 +95,7 @@ No open items: the YAML phase and flow work listed here is done, see Done.
 - [x] A request still in flight at the phase end is dropped and counted as "cancelled at phase end" instead of a 500, and nothing from one phase lands in the next: the phase end cancels, awaits every client, completes the channel and drains it.
 - [x] The error ratio and "% done" are per phase, not per last second.
 - [x] `MaxConnectionsPerServer` is the number of users the run can reach (`src/SharpArtillery/CustomHttpClientFactory.cs`).
+- [x] `-r` reaches its target: the clients share one `RateSchedule` per phase (slot n due at the phase start + n / rps, `src/SharpArtillery/RateSchedule.cs`) instead of each client sleeping its share after its own response. In `tools/bench.ps1` (5 s runs) `-c 2 -r 200` went from 135 to 199 req/s and `-c 10 -r 100` against a 50 ms endpoint from 63 to 98. A phase whose clients cannot keep up ends with one line that gives the reached rate and what the clients can do.
 - [x] `tools/bench.ps1` measures the card's runs (requests, req/s, tool CPU / wall, peak memory) against the local testapi, with an optional baseline checkout.
 
 ### Code review actions completed
