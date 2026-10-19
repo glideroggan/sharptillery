@@ -111,28 +111,7 @@ internal sealed class Manager : IDisposable
     public async Task ProcessData()
     {
         await Console.Out.WriteLineAsync("Processing data...");
-
-        // Calculate RPS for each data point using O(n) sliding window algorithm.
-        // For each point, count how many requests completed within the 1-second window
-        // ending at that point's completion time: (point.Time - 1s, point.Time]
-        _responseData.Sort((a, b) =>
-            a.RequestReceivedTime < b.RequestReceivedTime ? -1 :
-            a.RequestReceivedTime == b.RequestReceivedTime ? 0 : 1);
-
-        var left = 0;
-        for (var right = 0; right < _responseData.Count; right++)
-        {
-            var point = _responseData[right];
-            var windowStart = point.RequestReceivedTime.AddSeconds(-1);
-
-            // Advance left pointer past entries at or before windowStart
-            // This matches the original condition: (windowStart < entry.Time]
-            while (left <= right && _responseData[left].RequestReceivedTime <= windowStart)
-                left++;
-
-            point.Rps = right - left + 1;
-            _responseData[right] = point;
-        }
+        StatsUtils.AssignRps(_responseData);
     }
 
     public volatile Progress GetProgress = new();
@@ -451,7 +430,7 @@ internal sealed class Manager : IDisposable
         ReadAvailable(reader, ref interval);
         PublishProgress(ref interval);
 
-        _averageRps = (int)(GetProgress.Requests / TotalTimeTimer.Elapsed.TotalSeconds);
+        _averageRps = StatsUtils.AverageRps(GetProgress.Requests, TotalTimeTimer.Elapsed);
         TotalTimeTimer.Stop();
     }
 

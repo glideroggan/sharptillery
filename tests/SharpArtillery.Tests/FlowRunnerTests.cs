@@ -44,7 +44,7 @@ public class FlowRunnerTests
         using var runner = new FlowRunner(steps, "http://stub.test", TimeSpan.FromSeconds(5), new Stopwatch(),
             handler: stub);
         runner.Prepare(1);
-        runner.Start(maxRequestsPerVu: 2);
+        runner.Start(maxRequests: 2);
         await runner.WaitForCompletionAsync();
 
         var sent = stub.Requests.ToList();
@@ -66,17 +66,17 @@ public class FlowRunnerTests
         using var runner = new FlowRunner(steps, "http://stub.test", TimeSpan.FromSeconds(5), new Stopwatch(),
             handler: stub);
         runner.Prepare(3);
-        runner.Start(maxRequestsPerVu: 2);
+        runner.Start(maxRequests: 6);
         await runner.WaitForCompletionAsync();
 
         Assert.Equal(6, stub.CallCount);
         Assert.Equal(6, runner.TotalRequests);
     }
 
-    // Red for slice 4: a phase's `requests` is a total for the phase. Today flow mode divides it
-    // by the VU count with integer division (2 / 5 = 0) and each VU still sends one request,
-    // so `requests: 2, vu: 5` sends 5.
-    [Fact(Skip = "slice 4")]
+    // A phase's `requests` is a total for the phase. Before slice 4 flow mode divided it by the
+    // VU count with integer division (2 / 5 = 0) and each VU still sent one request, so
+    // `requests: 2, vu: 5` sent 5.
+    [Fact]
     [Trait("slice", "4")]
     public async Task Yaml_requests_are_a_total_split_across_the_vus()
     {

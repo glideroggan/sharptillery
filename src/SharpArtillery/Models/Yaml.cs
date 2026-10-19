@@ -1,21 +1,136 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.RegularExpressions;
+using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
 namespace SharpArtillery.YamlConfig;
 
-internal sealed class YamlHelper
+internal sealed partial class YamlHelper
 {
+    /// <summary>
+    /// Loads a YAML file that <see cref="Load"/> has found no errors in.
+    /// </summary>
     internal static ConfigRoot ReadYaml(string path)
     {
-        var configInput = File.ReadAllText(path);
-        var deserializer = new DeserializerBuilder()
-            .WithNamingConvention(CamelCaseNamingConvention.Instance)
-            .Build();
-        var root = deserializer.Deserialize<ConfigRoot>(configInput);
-        return root;
+        var (config, errors) = Load(path);
+        if (errors.Count > 0)
+            throw new InvalidOperationException(string.Join(Environment.NewLine, errors));
+        return config!;
     }
+
+    /// <summary>
+    /// Reads the YAML file, or says why it cannot run as written. The model has a property only for
+    /// keys the run uses, so any other key (Artillery's arrival-rate phases, <c>excludeGraph</c>, a
+    /// misspelling) is an error that names the key and its line instead of being ignored.
+    /// </summary>
+    internal static (ConfigRoot? Config, List<string> Errors) Load(string path)
+    {
+        string text;
+        try
+        {
+            text = File.ReadAllText(path);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException
+                                      or NotSupportedException)
+        {
+            return (null, [$"YAML file '{path}' cannot be read: {e.Message}"]);
+        }
+
+        ConfigRoot root;
+        try
+        {
+            var deserializer = new DeserializerBuilder()
+                .WithNamingConvention(CamelCaseNamingConvention.Instance)
+                .Build();
+            // An empty file has no root; the run then reports what is missing.
+            root = deserializer.Deserialize<ConfigRoot?>(text) ?? new ConfigRoot();
+        }
+        catch (YamlException e)
+        {
+            return (null, [DescribeYamlError(path, e)]);
+        }
+
+        return (root, UnsupportedValues(path, root));
+    }
+
+    /// <summary>
+    /// What the user can do about a key the model has no property for. Keys not listed get no hint.
+    /// </summary>
+    private static readonly Dictionary<string, string> KeyHints = new(StringComparer.Ordinal)
+    {
+        ["arrivalRate"] = ArrivalHint,
+        ["arrivalCount"] = ArrivalHint,
+        ["rampTo"] = ArrivalHint,
+        ["maxVusers"] = ArrivalHint,
+        ["excludeGraph"] = "Every phase is in the report."
+    };
+
+    private const string ArrivalHint =
+        "A phase runs a fixed number of users: give it vu, with duration or requests.";
+
+    [GeneratedRegex(@"Property '(?<key>[^']+)' not found on type '(?<type>[^']+)'")]
+    private static partial Regex UnknownProperty();
+
+    private static string DescribeYamlError(string path, YamlException e)
+    {
+        var where = $"YAML file '{path}' line {e.Start.Line}";
+        var unknown = UnknownProperty().Match(e.Message);
+        if (unknown.Success)
+        {
+            var key = unknown.Groups["key"].Value;
+            var hint = KeyHints.TryGetValue(key, out var text) ? " " + text : "";
+            return $"{where}: '{key}' is not supported in {Section(unknown.Groups["type"].Value)}.{hint}";
+        }
+
+        // A value of the wrong type (vu: many) is wrapped; the innermost message names the value.
+        Exception inner = e;
+        while (inner.InnerException != null) inner = inner.InnerException;
+        return $"{where}: {inner.Message}";
+    }
+
+    private static string Section(string typeName) =>
+        typeName[(typeName.LastIndexOf('.') + 1)..] switch
+        {
+            nameof(ConfigRoot) => "the top level",
+            nameof(ConfigSettings) => "settings",
+            nameof(Phase) => "a phase",
+            nameof(Scenario) => "a scenario",
+            nameof(FlowStep) => "a flow step",
+            nameof(RequestSpec) => "a request",
+            nameof(CaptureSpec) => "a capture",
+            var other => other
+        };
+
+    /// <summary>
+    /// Keys the model reads but the run cannot honour as written.
+    /// </summary>
+    private static List<string> UnsupportedValues(string path, ConfigRoot root)
+    {
+        var errors = new List<string>();
+
+        if (root.Scenarios is { Count: > 1 } scenarios)
+        {
+            errors.Add($"YAML file '{path}': {scenarios.Count} scenarios found, but only one scenario is " +
+                       "supported (weighted scenarios are not). Keep one under scenarios.");
+        }
+
+        // A bare "settings:" key leaves Settings null.
+        if (root.Settings?.Report is { } report && !IsSupportedReportType(report))
+        {
+            errors.Add($"YAML file '{path}': settings.report: Unsupported report type: '{report}'. Use html.");
+        }
+
+        return errors;
+    }
+
+    /// <summary>
+    /// The report types a run can write, for <c>-e</c> and <c>settings.report</c> alike.
+    /// </summary>
+    internal static bool IsSupportedReportType(string type) =>
+        string.Equals(type, "html", StringComparison.OrdinalIgnoreCase);
 
     internal static string GetReportExtension(string val) =>
         val.ToLowerInvariant() switch
@@ -57,7 +172,7 @@ public class ConfigSettings
     public string? Target { get; set; }
     
     /// <summary>
-    /// Report format: "html" or "excel".
+    /// Report type, as <c>-e</c>: "html" is the only one. A typed <c>-e</c> wins; <c>-o</c> still turns the report on.
     /// </summary>
     public string? Report { get; set; }
     
@@ -106,11 +221,6 @@ public class Phase
     /// Max requests for this phase (mutually exclusive with Duration).
     /// </summary>
     public int? Requests { get; set; }
-    
-    /// <summary>
-    /// Whether to exclude this phase from graphs (e.g., warm-up phases).
-    /// </summary>
-    public bool ExcludeGraph { get; set; }
 }
 
 /// <summary>
@@ -124,7 +234,7 @@ public class Scenario
     public string? Name { get; set; }
     
     /// <summary>
-    /// Weight for scenario selection (future: for weighted random selection).
+    /// Accepted for Artillery files; with one scenario allowed it has no effect.
     /// </summary>
     public int Weight { get; set; } = 1;
     

@@ -37,6 +37,9 @@ internal sealed partial class FlowExecutor
     /// <summary>
     /// Executes a single flow step and returns a DataPoint with timing info.
     /// </summary>
+    /// <exception cref="OperationCanceledException">
+    /// <paramref name="cancellationToken"/> was cancelled while an HTTP request was in flight.
+    /// </exception>
     public async Task<DataPoint> ExecuteStepAsync(FlowStep step, CancellationToken cancellationToken)
     {
         if (step.IsThink)
@@ -120,27 +123,52 @@ internal sealed partial class FlowExecutor
         };
         
         using var request = new HttpRequestMessage(httpMethod, url);
-        
-        // Add headers with interpolation
+
+        // Add headers with interpolation. Content-* headers describe the body, so they go on the
+        // content below: the request headers refuse them.
+        var hasContentHeader = false;
         if (spec.Headers != null)
         {
             foreach (var (key, value) in spec.Headers)
             {
+                if (RequestTemplate.IsContentHeader(key))
+                {
+                    hasContentHeader = true;
+                    continue;
+                }
                 request.Headers.TryAddWithoutValidation(key, Interpolate(value));
             }
         }
-        
+
         // Add JSON body with interpolation
         if (spec.Json != null)
         {
             var interpolatedJson = InterpolateObject(spec.Json);
             request.Content = JsonContent.Create(interpolatedJson);
             request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-            dataPoint.RequestContentLengthBytes = request.Content.Headers.ContentLength;
         }
         else if (!string.IsNullOrEmpty(spec.Body))
         {
             request.Content = new StringContent(Interpolate(spec.Body));
+        }
+        else if (hasContentHeader)
+        {
+            // A content header with no body still reaches the server, on an empty body.
+            request.Content = new ByteArrayContent(Array.Empty<byte>());
+        }
+
+        // Set after the default content type, so a step's Content-Type replaces it.
+        if (request.Content != null)
+        {
+            if (hasContentHeader)
+            {
+                foreach (var (key, value) in spec.Headers!)
+                {
+                    if (!RequestTemplate.IsContentHeader(key)) continue;
+                    request.Content.Headers.Remove(key);
+                    request.Content.Headers.TryAddWithoutValidation(key, Interpolate(value));
+                }
+            }
             dataPoint.RequestContentLengthBytes = request.Content.Headers.ContentLength;
         }
 
@@ -174,6 +202,12 @@ internal sealed partial class FlowExecutor
             dataPoint.ErrorType = "timeout";
             dataPoint.ExceptionType = oce.GetType().FullName;
             dataPoint.Error = oce.Message;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The phase ended while the request was in flight. It has no outcome, so the caller
+            // counts it as cancelled at phase end instead of recording it as an error.
+            throw;
         }
         catch (HttpRequestException e)
         {
