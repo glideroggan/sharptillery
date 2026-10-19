@@ -34,6 +34,8 @@ internal sealed class FlowRunner : IDisposable
     
     private long _totalRequests;
     private long _totalErrors;
+    private long _claimedRequests;
+    private long _cancelledAtPhaseEnd;
     private volatile bool _isRunning;
     
     public string? PhaseName { get; set; }
@@ -52,7 +54,12 @@ internal sealed class FlowRunner : IDisposable
     /// Total errors encountered.
     /// </summary>
     public long TotalErrors => Volatile.Read(ref _totalErrors);
-    
+
+    /// <summary>
+    /// HTTP requests still in flight when the phase ended. They are not in the results.
+    /// </summary>
+    public long CancelledAtPhaseEnd => Volatile.Read(ref _cancelledAtPhaseEnd);
+
     /// <summary>
     /// Whether the runner is currently executing (any VU still running).
     /// </summary>
@@ -101,7 +108,9 @@ internal sealed class FlowRunner : IDisposable
         _vuTasks.Clear();
         Interlocked.Exchange(ref _totalRequests, 0);
         Interlocked.Exchange(ref _totalErrors, 0);
-        
+        Interlocked.Exchange(ref _claimedRequests, 0);
+        Interlocked.Exchange(ref _cancelledAtPhaseEnd, 0);
+
         for (var i = 0; i < vuCount; i++)
         {
             var vu = new VirtualUser(
@@ -116,25 +125,40 @@ internal sealed class FlowRunner : IDisposable
 
     /// <summary>
     /// Starts all VUs executing the flow. Returns immediately.
-    /// VUs will run until cancelled or until they hit MaxRequests/Duration limits.
+    /// VUs run until cancelled, until the phase's requests are used up, or until the duration ends.
     /// </summary>
-    public void Start(int? maxRequestsPerVu = null, TimeSpan? duration = null)
+    /// <param name="maxRequests">HTTP requests for the whole phase, shared by every VU; think steps do not count.</param>
+    /// <param name="duration">Phase length from this call; when it ends, the step each VU is in is cancelled.</param>
+    public void Start(int? maxRequests = null, TimeSpan? duration = null)
     {
         _isRunning = true;
-        
+
         // Start global timer if not already running
         if (!_globalTimer.IsRunning)
             _globalTimer.Start();
-        
+
+        if (duration is { } phaseLength)
+            _cts.CancelAfter(phaseLength);
+
         foreach (var vu in _virtualUsers)
         {
             var vuLocal = vu;
             var task = Task.Run(async () =>
             {
-                await RunVuLoopAsync(vuLocal, maxRequestsPerVu, duration, _cts.Token);
+                await RunVuLoopAsync(vuLocal, maxRequests, _cts.Token);
             }, _cts.Token);
             _vuTasks.Add(task);
         }
+    }
+
+    /// <summary>
+    /// Hands out one request slot of the phase. Always true without a request limit; false once
+    /// every slot is taken, even while earlier requests are still in flight.
+    /// </summary>
+    private bool TryClaimRequest(int? maxRequests)
+    {
+        if (maxRequests is not { } max) return true;
+        return Interlocked.Increment(ref _claimedRequests) <= max;
     }
 
     /// <summary>
@@ -169,48 +193,46 @@ internal sealed class FlowRunner : IDisposable
     /// </summary>
     private async Task RunVuLoopAsync(
         VirtualUser vu,
-        int? maxRequestsPerVu,
-        TimeSpan? duration,
+        int? maxRequests,
         CancellationToken cancellationToken)
     {
         var executor = new FlowExecutor(vu, _globalTimer);
-        var vuStartTime = DateTime.UtcNow;
-        var requestCount = 0;
-        
+
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                // Check duration limit
-                if (duration.HasValue && DateTime.UtcNow - vuStartTime >= duration.Value)
-                    break;
-                
                 // Execute each step in the flow
                 foreach (var step in _flowSteps)
                 {
+                    // The duration timer cancels the token; a think step it cuts short returns here.
                     if (cancellationToken.IsCancellationRequested)
-                        break;
-                    
-                    // Check duration limit before each step
-                    if (duration.HasValue && DateTime.UtcNow - vuStartTime >= duration.Value)
-                        break;
-                    
-                    var dataPoint = await executor.ExecuteStepAsync(step, cancellationToken);
-                    
+                        return;
+
+                    // Only HTTP requests use the phase's request slots, not think steps.
+                    if (!step.IsThink && !TryClaimRequest(maxRequests))
+                        return;
+
+                    DataPoint dataPoint;
+                    try
+                    {
+                        dataPoint = await executor.ExecuteStepAsync(step, cancellationToken);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        if (!step.IsThink)
+                            Interlocked.Increment(ref _cancelledAtPhaseEnd);
+                        return;
+                    }
+
                     // Only count HTTP requests, not think steps
                     if (!step.IsThink)
                     {
                         _resultQueue.Enqueue(dataPoint);
                         Interlocked.Increment(ref _totalRequests);
-                        
+
                         if (dataPoint.IsError())
                             Interlocked.Increment(ref _totalErrors);
-                        
-                        requestCount++;
-                        
-                        // Check max requests limit
-                        if (maxRequestsPerVu.HasValue && requestCount >= maxRequestsPerVu.Value)
-                            return;
                     }
                 }
                 

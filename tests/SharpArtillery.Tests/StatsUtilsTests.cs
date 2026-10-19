@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using SharpArtillery.Models;
 using Xunit;
 
 namespace SharpArtillery.Tests;
@@ -38,5 +40,48 @@ public class StatsUtilsTests
     public void Percentile_of_one_value_is_that_value()
     {
         Assert.Equal(42, StatsUtils.Percentile(new List<double> { 42 }, 0.5));
+    }
+
+    private static DataPoint At(double seconds) => new()
+    {
+        RequestReceivedTime = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(seconds)
+    };
+
+    // Blast and flow mode share this one helper, so the report counts both the same way.
+    [Fact]
+    [Trait("slice", "4")]
+    public void Rps_counts_the_answers_in_the_second_ending_at_each_point()
+    {
+        // Out of order on purpose: the helper sorts by arrival.
+        var points = new List<DataPoint> { At(1.0), At(0.0), At(0.5), At(2.0), At(1.5) };
+
+        StatsUtils.AssignRps(points);
+
+        Assert.Equal(new[] { 0.0, 0.5, 1.0, 1.5, 2.0 },
+            points.Select(p => (p.RequestReceivedTime - At(0).RequestReceivedTime).TotalSeconds));
+        // The window is (t - 1 s, t]: a point exactly one second earlier is outside it.
+        Assert.Equal(new[] { 1, 2, 2, 2, 2 }, points.Select(p => p.Rps));
+    }
+
+    [Fact]
+    [Trait("slice", "4")]
+    public void Rps_of_no_points_leaves_the_list_empty()
+    {
+        var points = new List<DataPoint>();
+
+        StatsUtils.AssignRps(points);
+
+        Assert.Empty(points);
+    }
+
+    [Theory]
+    [InlineData(10, 2.0, 5)]
+    [InlineData(7, 2.0, 3)]
+    [InlineData(5, 0.0, 0)]
+    [InlineData(0, 1.0, 0)]
+    [Trait("slice", "4")]
+    public void Average_rps_rounds_down_and_is_zero_without_time(long requests, double seconds, int expected)
+    {
+        Assert.Equal(expected, StatsUtils.AverageRps(requests, TimeSpan.FromSeconds(seconds)));
     }
 }

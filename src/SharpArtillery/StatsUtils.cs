@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using SharpArtillery.Models;
 
 namespace SharpArtillery;
 
@@ -29,4 +30,33 @@ internal static class StatsUtils
 
         return sortedValues[idx];
     }
+
+    /// <summary>
+    /// Sorts <paramref name="points"/> by the time each answer arrived and sets every point's
+    /// <see cref="DataPoint.Rps"/> to the answers in the one second ending at that point,
+    /// <c>(time - 1 s, time]</c>. One pass with a sliding window, so it is O(n) after the sort.
+    /// </summary>
+    public static void AssignRps(List<DataPoint> points)
+    {
+        points.Sort((a, b) => a.RequestReceivedTime.CompareTo(b.RequestReceivedTime));
+
+        var left = 0;
+        for (var right = 0; right < points.Count; right++)
+        {
+            var point = points[right];
+            var windowStart = point.RequestReceivedTime.AddSeconds(-1);
+
+            while (left <= right && points[left].RequestReceivedTime <= windowStart)
+                left++;
+
+            point.Rps = right - left + 1;
+            points[right] = point;
+        }
+    }
+
+    /// <summary>
+    /// Requests per second over <paramref name="elapsed"/>, rounded down; 0 when no time has passed.
+    /// </summary>
+    public static int AverageRps(long requests, TimeSpan elapsed) =>
+        elapsed > TimeSpan.Zero ? (int)(requests / elapsed.TotalSeconds) : 0;
 }

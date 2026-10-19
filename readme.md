@@ -72,6 +72,36 @@ Run it with:
 sharptillery -y flow.yaml -o report
 ```
 
+Each phase prints a progress line every second and a completed line. After the last phase the run prints the same latency summary and percentiles as a flags run, over every phase together.
+
+### What a YAML file can hold
+
+The file is checked before any request is sent. A key that is not in the list below is an error that names the key and its line, so nothing in the file is ignored without a word.
+
+| Key | Meaning |
+|-----|---------|
+| `settings.target` | Base URL; each step's `url` is added to it |
+| `settings.timeout` | Per-request timeout in seconds (replaces `-T`) |
+| `settings.report` | Report type, as `-e`: `html` is the only one. A typed `-e` wins, and `-o` still turns the report on |
+| `phases` | Run one after another. Each has `name`, `vu` (users) and either `duration` (seconds) or `requests` |
+| `requests` | The total for the phase, shared by its users (`requests: 2` with `vu: 5` sends 2). Think steps do not count |
+| `duration` | Ends the phase when it runs out, also in the middle of a step: a request still waiting is counted as "cancelled at phase end", not as an error |
+| `scenarios` | Exactly one scenario, with a `name` and a `flow` |
+| flow steps | `get`, `post`, `put` or `delete` with `url`, `headers`, `json` or `body`, and `capture` (`json: "$.path"` or `header: Name`, with `as: variable`); or `think: <seconds>` |
+
+Older files may still use `settings.phases` (instead of top-level `phases`) and `settings.requestTimeoutSeconds` (instead of `settings.timeout`); both are read.
+
+`{{ variable }}` in a `url`, header value, top-level `json` value or `body` is replaced by a captured value. `Content-*` headers (such as `Content-Type`) go on the request body and replace the default type of a `json` body.
+
+A flow of one request without captures runs in blast mode, the same loop as a flags run. Any other flow runs per user: each user runs the steps in order, with its own cookies and captured values.
+
+Not supported, and an error when the file has it:
+
+- several scenarios (weighted scenarios); `weight` on the one scenario is accepted and has no effect;
+- Artillery's arrival-rate phases: `arrivalRate`, `arrivalCount`, `rampTo`, `maxVusers`;
+- `excludeGraph`: every phase is in the report;
+- `settings.report` other than `html`.
+
 ## Development
 
 `src/SharpArtillery` is the tool. `src/testapi` is a small target API with an endpoint that can simulate errors and slow responses, useful for trying the tool locally:

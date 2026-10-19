@@ -78,10 +78,13 @@ internal sealed class ConsoleReporter
 
         Console.Out.WriteLine(
             string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Target URL:", _settings.Target));
-        Console.Out.WriteLine(_settings.MaxRequests > 0
-            ? string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Max requests:", _settings.MaxRequests)
-            : string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Duration:",
-                _settings.Duration!.Value.ToString()));
+        // A YAML run that mixes request and duration phases has neither as a whole.
+        if (_settings.MaxRequests > 0)
+            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Max requests:",
+                _settings.MaxRequests));
+        else if (_settings.Duration is { } duration)
+            Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Duration:",
+                duration.ToString()));
         Console.Out.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0,-30} {1,20}", "Concurrency level:",
             _settings.Vu));
         Console.Out.WriteLine();

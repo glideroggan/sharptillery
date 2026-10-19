@@ -229,6 +229,16 @@ internal static class CommandLineParser
             }
         });
 
+        // The YAML file is read at parse time, so a key the run would ignore, or a file that cannot
+        // be read, stops the command before any request is sent.
+        rootCommand.Validators.Add(result =>
+        {
+            var yaml = ValueOrDefault(result, yamlOption);
+            if (string.IsNullOrEmpty(yaml)) return;
+            foreach (var error in YamlHelper.Load(yaml).Errors)
+                result.AddError(error);
+        });
+
         // Auto-tune requires duration mode
         rootCommand.Validators.Add(result =>
         {
@@ -302,7 +312,7 @@ internal static class CommandLineParser
         {
             // The default ("html") is always valid, so only a value typed on the command line is checked.
             if (!Typed(result, extensionOption, out var extension)) return;
-            if (!string.Equals(extension, "html", StringComparison.OrdinalIgnoreCase))
+            if (!YamlHelper.IsSupportedReportType(extension!))
             {
                 result.AddError($"Unsupported report type: '{extension}'. Use html.");
             }
@@ -420,17 +430,7 @@ internal static class CommandLineParser
         // Parse headers
         ParseHeaders(parseResult.GetValue(headerOption), config.Headers);
 
-        // Parse output settings
-        var output = parseResult.GetValue(outputOption);
-        var extension = parseResult.GetValue(extensionOption);
-        if (!string.IsNullOrEmpty(output))
-        {
-            config.ReportSettings.Enabled = true;
-            config.ReportSettings.Name = output;
-            config.ReportSettings.Extension = YamlHelper.GetReportExtension(extension ?? "html");
-        }
-
-        // Load YAML config if specified
+        // Load YAML config if specified (checked by AddValidators)
         if (!string.IsNullOrEmpty(config.Yaml))
         {
             config.YamlConfig = YamlHelper.ReadYaml(config.Yaml);
@@ -440,8 +440,26 @@ internal static class CommandLineParser
             }
         }
 
+        // Parse output settings
+        var output = parseResult.GetValue(outputOption);
+        var typedExtension = parseResult.GetResult(extensionOption) is OptionResult { Implicit: false }
+            ? parseResult.GetValue(extensionOption)
+            : null;
+        if (!string.IsNullOrEmpty(output))
+        {
+            config.ReportSettings.Enabled = true;
+            config.ReportSettings.Name = output;
+            config.ReportSettings.Extension = YamlHelper.GetReportExtension(ReportType(typedExtension, config.YamlConfig));
+        }
+
         return config;
     }
+
+    /// <summary>
+    /// The report type: a typed <c>-e</c>, else the YAML <c>settings.report</c>, else html.
+    /// </summary>
+    internal static string ReportType(string? typedExtension, ConfigRoot? yaml) =>
+        typedExtension ?? yaml?.Settings?.Report ?? "html";
 
     /// <summary>
     /// Adds each <c>Name:Value</c> header to <paramref name="target"/>, splitting at the first colon

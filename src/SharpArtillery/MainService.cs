@@ -25,10 +25,14 @@ public sealed class MainService
     /// <summary>
     /// Main entry point - receives pre-validated config from CommandLineParser
     /// </summary>
-    public async Task Run(ArtilleryConfig flags)
-    {
-        var httpClientFactory = new CustomHttpClientFactory(flags);
+    public Task Run(ArtilleryConfig flags) => Run(flags, new CustomHttpClientFactory(flags));
 
+    /// <param name="flags">The parsed command line, with the YAML config when <c>-y</c> was given.</param>
+    /// <param name="httpClientFactory">Where blast mode gets its client (tests pass a stub).</param>
+    /// <param name="flowHandler">Handler shared by every flow-mode VU (tests pass a stub); null gives each VU its own.</param>
+    internal async Task Run(ArtilleryConfig flags, ICustomHttpClientFactory httpClientFactory,
+        HttpMessageHandler? flowHandler = null)
+    {
         Settings? settings;
         var manager = new Manager(httpClientFactory, _loggerFactory);
         
@@ -60,7 +64,8 @@ public sealed class MainService
                     ? TimeSpan.FromSeconds(config.Settings.GetTimeout()!.Value)
                     : TimeSpan.FromSeconds(5);
                 
-                await RunFlowModeAsync(flowSteps, baseTarget, requestTimeout, phases, flags.ReportSettings);
+                await RunFlowModeAsync(flowSteps, baseTarget, requestTimeout, phases, flags.ReportSettings,
+                    flowHandler);
             }
             else
             {
@@ -78,14 +83,18 @@ public sealed class MainService
 
                 var endpoint = baseTarget.TrimEnd('/') + requestUrl;
 
+                var cancelledAtPhaseEnd = 0L;
                 foreach (var phase in phases)
                 {
                     settings = BlastPhaseSettings(flags, config, phase, endpoint, method, spec);
 
                     settings.Validate($"Phase '{phase.Name ?? "(unnamed)"}'");
 
-                    await RunPhaseTest(manager, settings, phase.Name);
+                    cancelledAtPhaseEnd += await RunPhaseTest(manager, settings, phase.Name);
                 }
+
+                PrintRunSummary(YamlSummarySettings(endpoint, phases), manager.Results,
+                    manager.GlobalTimeTimer.Elapsed, cancelledAtPhaseEnd);
 
                 if (flags.ReportSettings.Enabled)
                     await WriteReportAsync(flags.ReportSettings, manager.Results, endpoint);
@@ -180,21 +189,21 @@ public sealed class MainService
         
         // Collect all results across phases
         var allResults = new List<DataPoint>();
-        
+        var cancelledAtPhaseEnd = 0L;
+
         foreach (var phase in phases)
         {
             var phaseLabel = string.IsNullOrEmpty(phase.Name) ? "Phase" : $"Phase '{phase.Name}'";
             var duration = phase.Duration.HasValue ? TimeSpan.FromSeconds(phase.Duration.Value) : (TimeSpan?)null;
-            var maxRequestsPerVu = phase.Requests.HasValue && phase.Requests > 0
-                ? phase.Requests.Value / Math.Max(phase.Vu, 1)
-                : (int?)null;
-            
+            // The phase's requests are a total, shared by its VUs as blast mode shares -n.
+            var maxRequests = phase.Requests is > 0 ? phase.Requests : null;
+
             Console.Out.WriteLine($"\n=== {phaseLabel} started (VU: {phase.Vu}, Duration: {phase.Duration ?? 0}s, Requests: {phase.Requests ?? 0}) ===");
-            
+
             using var runner = new FlowRunner(flowSteps, baseTarget, requestTimeout, globalTimer, handler: handler);
             runner.PhaseName = phase.Name;
             runner.Prepare(phase.Vu);
-            runner.Start(maxRequestsPerVu, duration);
+            runner.Start(maxRequests, duration);
             
             var phaseStartTime = DateTime.UtcNow;
             var lastReportedRequests = 0L;
@@ -229,45 +238,58 @@ public sealed class MainService
                 allResults.Add(dataPoint);
             }
             
-            var phaseRps = phaseResults.Count > 0 
-                ? (int)(phaseResults.Count / (DateTime.UtcNow - phaseStartTime).TotalSeconds)
-                : 0;
+            var phaseRps = StatsUtils.AverageRps(phaseResults.Count, DateTime.UtcNow - phaseStartTime);
             var phaseErrorCount = phaseResults.Count(dp => dp.IsError());
             var phaseErrorRatio = phaseResults.Count > 0 ? phaseErrorCount * 100.0 / phaseResults.Count : 0;
-            
-            Console.Out.WriteLine($"=== {phaseLabel} completed: {phaseResults.Count} requests, {phaseRps} avg RPS, {phaseErrorRatio:F}% errors ===\n");
+            var phaseCancelled = runner.CancelledAtPhaseEnd;
+            cancelledAtPhaseEnd += phaseCancelled;
+
+            Console.Out.WriteLine($"=== {phaseLabel} completed: {phaseResults.Count} requests, {phaseRps} avg RPS, {phaseErrorRatio:F}% errors, {phaseCancelled} cancelled at phase end ===\n");
         }
-        
+
         globalTimer.Stop();
-        
-        // Calculate RPS for each data point (same algorithm as Manager.ProcessData)
-        if (allResults.Count > 0)
-        {
-            allResults.Sort((a, b) =>
-                a.RequestReceivedTime < b.RequestReceivedTime ? -1 :
-                a.RequestReceivedTime == b.RequestReceivedTime ? 0 : 1);
 
-            var left = 0;
-            for (var right = 0; right < allResults.Count; right++)
-            {
-                var point = allResults[right];
-                var windowStart = point.RequestReceivedTime.AddSeconds(-1);
-
-                while (left <= right && allResults[left].RequestReceivedTime <= windowStart)
-                    left++;
-
-                point.Rps = right - left + 1;
-                allResults[right] = point;
-            }
-        }
-        
         Console.Out.WriteLine("Processing data...");
-        
+        StatsUtils.AssignRps(allResults);
+
+        PrintRunSummary(YamlSummarySettings(baseTarget, phases), allResults, globalTimer.Elapsed,
+            cancelledAtPhaseEnd);
+
         if (reportSettings.Enabled)
             await WriteReportAsync(reportSettings, allResults, baseTarget);
     }
 
-    private static async Task RunPhaseTest(Manager manager, Settings settings, string? phaseName)
+    /// <summary>
+    /// Prints the latency summary a flags run ends with, over every result of a YAML run.
+    /// </summary>
+    private static void PrintRunSummary(Settings summarySettings, List<DataPoint> results, TimeSpan elapsed,
+        long cancelledAtPhaseEnd)
+    {
+        var reporter = new ConsoleReporter(summarySettings, results, elapsed,
+            StatsUtils.AverageRps(results.Count, elapsed));
+        reporter.PrintSummary();
+        Console.Out.WriteLine($"Cancelled at phase end: {cancelledAtPhaseEnd}");
+        reporter.PrintPercentiles();
+    }
+
+    /// <summary>
+    /// What the summary says about a YAML run as a whole: the largest phase's users, and the
+    /// phases' requests or durations added up when every phase uses the same one.
+    /// </summary>
+    internal static Settings YamlSummarySettings(string target, List<Phase> phases) => new()
+    {
+        Target = target,
+        Vu = phases.Count > 0 ? phases.Max(p => p.Vu) : 0,
+        MaxRequests = phases.Count > 0 && phases.All(p => p.Requests is > 0)
+            ? phases.Sum(p => p.Requests!.Value)
+            : null,
+        Duration = phases.Count > 0 && phases.All(p => p.Duration.HasValue)
+            ? TimeSpan.FromSeconds(phases.Sum(p => p.Duration!.Value))
+            : null
+    };
+
+    /// <returns>Requests still in flight when the phase ended.</returns>
+    private static async Task<int> RunPhaseTest(Manager manager, Settings settings, string? phaseName)
     {
         var phaseLabel = string.IsNullOrEmpty(phaseName) ? "Phase" : $"Phase '{phaseName}'";
         Console.Out.WriteLine($"\n=== {phaseLabel} started (VU: {settings.Vu}, Duration: {settings.Duration?.TotalSeconds ?? 0}s, Requests: {settings.MaxRequests ?? 0}) ===");
@@ -294,6 +316,7 @@ public sealed class MainService
         var phaseErrors = manager.GetProgress.ErrorRatio * 100;
         var phaseCancelled = manager.GetProgress.CancelledAtPhaseEnd;
         Console.Out.WriteLine($"=== {phaseLabel} completed: {phaseRequests} requests, {phaseRps} avg RPS, {phaseErrors:F}% errors, {phaseCancelled} cancelled at phase end ===\n");
+        return phaseCancelled;
     }
 
     private static async Task RunNonPhaseTest(Manager manager, Settings settings)
