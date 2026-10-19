@@ -18,7 +18,7 @@
     <PackageId>nyviken-sharptillery</PackageId>
     <Authors>Roger</Authors>
     <ToolCommandName>sharptillery</ToolCommandName>
-    <Version>0.5.3</Version>
+    <Version>0.6.0</Version>
     <PackageOutputPath>./nupkg</PackageOutputPath>
     <Description>Command-line HTTP load testing tool with console statistics and HTML reports.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
