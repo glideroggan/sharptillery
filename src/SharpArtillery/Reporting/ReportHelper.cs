@@ -6,7 +6,6 @@ namespace SharpArtillery.Reporting;
 
 internal enum ReportingTemplates
 {
-    Excel,
     Html,
     ChartJs
 }
@@ -14,7 +13,6 @@ internal static class ReportHelper
 {
     public static Dictionary<ReportingTemplates, string> ReportingTemplatesLocations = new()
     {
-        { ReportingTemplates.Excel, "SharpArtillery.Reporting.Templates.reportTemplate.xlsx" },
         { ReportingTemplates.Html, "SharpArtillery.Reporting.Templates.reportTemplate.html" },
         { ReportingTemplates.ChartJs, "SharpArtillery.Reporting.Templates.chart.umd.min.js" }
     };

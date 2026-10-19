@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SharpArtillery.Configs;
 using SharpArtillery.Models;
+using SharpArtillery.Reporting;
 
 namespace SharpArtillery;
 
@@ -105,12 +106,18 @@ internal sealed class Manager : IDisposable
     public async Task ProcessData()
     {
         await Console.Out.WriteLineAsync("Processing data...");
-        StatsUtils.AssignRps(_responseData);
+        StatsUtils.SortByTimeline(_responseData);
     }
 
     public volatile Progress GetProgress = new();
 
     public List<DataPoint> Results => _responseData;
+
+    /// <summary>
+    /// Where each result is written as it is read, when the run writes a CSV report.
+    /// </summary>
+    internal CsvReport? Csv { get; set; }
+
     private readonly ILogger<Manager> _logger;
     private readonly ILoggerFactory _loggerFactory;
 
@@ -432,6 +439,7 @@ internal sealed class Manager : IDisposable
         while (reader.TryRead(out var data))
         {
             _responseData.Add(data);
+            Csv?.Write(data);
             requests++;
             if (data.IsError())
             {
@@ -446,6 +454,8 @@ internal sealed class Manager : IDisposable
 
         if (requests == 0) return;
 
+        // Once per batch, so the file has the rows of each wake-up without a flush per row.
+        Csv?.Flush();
         interval.Requests += requests;
         Interlocked.Add(ref _totalRequests, requests);
         if (errors > 0)

@@ -36,6 +36,11 @@ public sealed class MainService
         Settings? settings;
         var manager = new Manager(httpClientFactory, _loggerFactory);
         
+        // A CSV report is written row by row while the run reads its results. The file is opened here,
+        // before the first request, so a path that cannot be written fails before anything is sent.
+        using var csv = OpenCsvReport(flags.ReportSettings);
+        manager.Csv = csv;
+
         if (flags.YamlConfig != null)
         {
             var config = flags.YamlConfig;
@@ -65,7 +70,7 @@ public sealed class MainService
                     : TimeSpan.FromSeconds(5);
                 
                 await RunFlowModeAsync(flowSteps, baseTarget, requestTimeout, phases, flags.ReportSettings,
-                    flowHandler);
+                    flowHandler, csv);
             }
             else
             {
@@ -111,7 +116,18 @@ public sealed class MainService
             if (flags.ReportSettings.Enabled)
                 await WriteReportAsync(flags.ReportSettings, manager.Results, target);
         }
+
+        // Closing after the summary, so a CSV write that failed during the run is reported last.
+        csv?.Close();
     }
+
+    /// <summary>
+    /// The CSV report file, opened before the run, or null when the run writes no CSV report.
+    /// </summary>
+    private static CsvReport? OpenCsvReport(ReportSettings reportSettings) =>
+        reportSettings.Enabled && reportSettings.Extension == ".csv"
+            ? CsvReport.Open(reportSettings.Name + reportSettings.Extension)
+            : null;
     
     /// <summary>
     /// The settings of one blast-mode phase. The YAML <c>settings.timeout</c> replaces the
@@ -179,8 +195,10 @@ public sealed class MainService
         TimeSpan requestTimeout,
         List<Phase> phases,
         ReportSettings reportSettings,
-        HttpMessageHandler? handler = null)
+        HttpMessageHandler? handler = null,
+        CsvReport? csv = null)
     {
+        // csv, when given, is written row by row as results are drained; the caller closes it.
         Console.Out.WriteLine($"[Flow Mode] Detected {flowSteps.Count} flow steps - using per-VU flow execution");
         
         // Use a shared global timer for report timeline
@@ -207,12 +225,16 @@ public sealed class MainService
             
             var phaseStartTime = DateTime.UtcNow;
             var lastReportedRequests = 0L;
+            var phaseResults = new List<DataPoint>();
             
             // Report progress while running
             while (runner.IsRunning)
             {
                 await Task.Delay(1000);
                 
+                // Results are written as they come in, once a second, so the CSV report fills during the phase.
+                DrainResults(runner, phaseResults, allResults, csv);
+
                 var (requests, errors, activeVUs) = runner.GetProgress();
                 var elapsed = DateTime.UtcNow - phaseStartTime;
                 var rps = elapsed.TotalSeconds > 0 ? (requests - lastReportedRequests) : 0;
@@ -230,13 +252,8 @@ public sealed class MainService
             
             await runner.WaitForCompletionAsync();
             
-            // Drain results from the runner
-            var phaseResults = new List<DataPoint>();
-            while (runner.ResultQueue.TryDequeue(out var dataPoint))
-            {
-                phaseResults.Add(dataPoint);
-                allResults.Add(dataPoint);
-            }
+            // Drain what the last second did not reach
+            DrainResults(runner, phaseResults, allResults, csv);
             
             var phaseRps = StatsUtils.AverageRps(phaseResults.Count, DateTime.UtcNow - phaseStartTime);
             var phaseErrorCount = phaseResults.Count(dp => dp.IsError());
@@ -250,13 +267,32 @@ public sealed class MainService
         globalTimer.Stop();
 
         Console.Out.WriteLine("Processing data...");
-        StatsUtils.AssignRps(allResults);
+        StatsUtils.SortByTimeline(allResults);
 
         PrintRunSummary(YamlSummarySettings(baseTarget, phases), allResults, globalTimer.Elapsed,
             cancelledAtPhaseEnd);
 
         if (reportSettings.Enabled)
             await WriteReportAsync(reportSettings, allResults, baseTarget);
+    }
+
+    /// <summary>
+    /// Moves the results a flow runner has queued into the phase's list and the run's list, and writes
+    /// them to the CSV report when there is one.
+    /// </summary>
+    private static void DrainResults(FlowRunner runner, List<DataPoint> phaseResults, List<DataPoint> allResults,
+        CsvReport? csv)
+    {
+        var drained = false;
+        while (runner.ResultQueue.TryDequeue(out var dataPoint))
+        {
+            phaseResults.Add(dataPoint);
+            allResults.Add(dataPoint);
+            csv?.Write(dataPoint);
+            drained = true;
+        }
+
+        if (drained) csv?.Flush();
     }
 
     /// <summary>
@@ -359,10 +395,9 @@ public sealed class MainService
     {
         switch (reportSettings.Extension)
         {
-            case ".xlsx":
-                // TODO: enable excel reporting again
-                throw new NotImplementedException();
-            // MyExcel.Create(outputPath, requests);
+            // The CSV rows were written during the run, and the file is closed by Run.
+            case ".csv":
+                break;
             case ".html":
 #pragma warning disable IL2026
                 await HtmlReport.CreateAsync(reportSettings.Name + reportSettings.Extension, responseData, endpoint);

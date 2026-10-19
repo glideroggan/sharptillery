@@ -22,7 +22,6 @@ public struct DataPoint
     public string? ExceptionType { get; set; }
     public long? ResponseContentLengthBytes { get; set; }
     public HttpStatusCode Status { get; set; }
-    public int Rps { get; set; }
     public bool HasResponse { get; set; }
     public bool IsTimeout { get; set; }
 

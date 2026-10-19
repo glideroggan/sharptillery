@@ -120,7 +120,7 @@ internal sealed partial class YamlHelper
         // A bare "settings:" key leaves Settings null.
         if (root.Settings?.Report is { } report && !IsSupportedReportType(report))
         {
-            errors.Add($"YAML file '{path}': settings.report: Unsupported report type: '{report}'. Use html.");
+            errors.Add($"YAML file '{path}': settings.report: Unsupported report type: '{report}'. Use html or csv.");
         }
 
         return errors;
@@ -130,14 +130,16 @@ internal sealed partial class YamlHelper
     /// The report types a run can write, for <c>-e</c> and <c>settings.report</c> alike.
     /// </summary>
     internal static bool IsSupportedReportType(string type) =>
-        string.Equals(type, "html", StringComparison.OrdinalIgnoreCase);
+        string.Equals(type, "html", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(type, "csv", StringComparison.OrdinalIgnoreCase);
 
     internal static string GetReportExtension(string val) =>
         val.ToLowerInvariant() switch
         {
-            "excel" => ".xlsx",
             "html" => ".html",
-            _ => ".xlsx"
+            "csv" => ".csv",
+            // Every value reaching here passed IsSupportedReportType, so an unknown one is a bug, not a format.
+            _ => throw new ArgumentException($"No report file for report type '{val}'.", nameof(val))
         };
 }
 
@@ -172,7 +174,7 @@ public class ConfigSettings
     public string? Target { get; set; }
     
     /// <summary>
-    /// Report type, as <c>-e</c>: "html" is the only one. A typed <c>-e</c> wins; <c>-o</c> still turns the report on.
+    /// Report type, as <c>-e</c>: "html" or "csv". A typed <c>-e</c> wins; <c>-o</c> still turns the report on.
     /// </summary>
     public string? Report { get; set; }
     

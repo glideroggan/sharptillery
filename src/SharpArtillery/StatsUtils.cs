@@ -41,27 +41,11 @@ internal static class StatsUtils
     }
 
     /// <summary>
-    /// Sorts <paramref name="points"/> by their timeline point (when each answer arrived) and sets
-    /// every point's <see cref="DataPoint.Rps"/> to the answers in the one second ending at that
-    /// point, <c>(time - 1 s, time]</c>. One pass with a sliding window, so it is O(n) after the sort.
+    /// Sorts <paramref name="points"/> by when each answer arrived (its timeline point). The console's
+    /// first error is the first one in list order, so the results are kept in this order after a run.
     /// </summary>
-    public static void AssignRps(List<DataPoint> points)
-    {
+    public static void SortByTimeline(List<DataPoint> points) =>
         points.Sort((a, b) => a.RequestTimeLine.CompareTo(b.RequestTimeLine));
-
-        var left = 0;
-        for (var right = 0; right < points.Count; right++)
-        {
-            var point = points[right];
-            var windowStart = point.RequestTimeLine - TimeSpan.FromSeconds(1);
-
-            while (left <= right && points[left].RequestTimeLine <= windowStart)
-                left++;
-
-            point.Rps = right - left + 1;
-            points[right] = point;
-        }
-    }
 
     /// <summary>
     /// Requests per second over <paramref name="elapsed"/>, rounded down; 0 when no time has passed.

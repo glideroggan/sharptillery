@@ -159,18 +159,26 @@ public class CommandLineValidatorTests
         Assert.Contains("Auto-tune (-A/--autotune) is not supported with max requests (-n/--requests).", errors);
     }
 
-    // Today `-e excel` passes the parser, maps to .xlsx and throws NotImplementedException in
-    // MainService.WriteReportAsync after the whole run. Only html is accepted until slice 6.
+    // Slice 3 refused everything but html; slice 6 removed Excel, so only html and csv are accepted.
     [Theory]
     [InlineData("excel")]
-    [InlineData("csv")]
     [InlineData("xlsx")]
-    [Trait("slice", "3")]
+    [InlineData("pdf")]
+    [Trait("slice", "6")]
     public void An_unsupported_report_type_is_a_parse_error(string extension)
     {
         var errors = Errors("-t", "http://localhost/x", "-n", "1", "-o", "report", "-e", extension);
 
         Assert.NotEmpty(errors);
+    }
+
+    [Fact]
+    [Trait("slice", "6")]
+    public void The_csv_report_type_is_accepted()
+    {
+        var errors = Errors("-t", "http://localhost/x", "-n", "1", "-o", "report", "-e", "csv");
+
+        Assert.Empty(errors);
     }
 
     // Today an unknown method is sent as GET without a word.

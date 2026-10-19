@@ -40,10 +40,11 @@ public class DataPointTests
     }
 
     // A run keeps every result in memory until the report is written, so the struct's size is
-    // most of the tool's peak memory (sharptillery#583: about 150 bytes, with duplicate times).
+    // most of the tool's peak memory. 72 bytes measured with Unsafe.SizeOf after Rps was removed
+    // (sharptillery#583 slice 6); a field added later must raise this limit on purpose.
     [Fact]
-    public void A_data_point_is_at_most_80_bytes()
+    public void A_data_point_is_at_most_72_bytes()
     {
-        Assert.InRange(Unsafe.SizeOf<DataPoint>(), 1, 80);
+        Assert.InRange(Unsafe.SizeOf<DataPoint>(), 1, 72);
     }
 }

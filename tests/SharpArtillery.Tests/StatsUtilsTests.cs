@@ -47,29 +47,27 @@ public class StatsUtilsTests
         RequestTimeLine = TimeSpan.FromSeconds(seconds)
     };
 
-    // Blast and flow mode share this one helper, so the report counts both the same way.
+    // The console's first error is the first one in list order, so the results are kept in the
+    // order their answers arrived.
     [Fact]
-    [Trait("slice", "4")]
-    public void Rps_counts_the_answers_in_the_second_ending_at_each_point()
+    [Trait("slice", "6")]
+    public void SortByTimeline_orders_the_points_by_when_their_answer_arrived()
     {
-        // Out of order on purpose: the helper sorts by arrival.
         var points = new List<DataPoint> { At(1.0), At(0.0), At(0.5), At(2.0), At(1.5) };
 
-        StatsUtils.AssignRps(points);
+        StatsUtils.SortByTimeline(points);
 
         Assert.Equal(new[] { 0.0, 0.5, 1.0, 1.5, 2.0 },
             points.Select(p => p.RequestTimeLine.TotalSeconds));
-        // The window is (t - 1 s, t]: a point exactly one second earlier is outside it.
-        Assert.Equal(new[] { 1, 2, 2, 2, 2 }, points.Select(p => p.Rps));
     }
 
     [Fact]
-    [Trait("slice", "4")]
-    public void Rps_of_no_points_leaves_the_list_empty()
+    [Trait("slice", "6")]
+    public void SortByTimeline_of_no_points_leaves_the_list_empty()
     {
         var points = new List<DataPoint>();
 
-        StatsUtils.AssignRps(points);
+        StatsUtils.SortByTimeline(points);
 
         Assert.Empty(points);
     }

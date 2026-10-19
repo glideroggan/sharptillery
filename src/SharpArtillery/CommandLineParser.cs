@@ -68,7 +68,7 @@ internal static class CommandLineParser
 
         var extensionOption = new Option<string>("--extension", "-e")
         {
-            Description = "Report type: html",
+            Description = "Report type: html or csv",
             DefaultValueFactory = _ => "html"
         };
 
@@ -314,7 +314,7 @@ internal static class CommandLineParser
             if (!Typed(result, extensionOption, out var extension)) return;
             if (!YamlHelper.IsSupportedReportType(extension!))
             {
-                result.AddError($"Unsupported report type: '{extension}'. Use html.");
+                result.AddError($"Unsupported report type: '{extension}'. Use html or csv.");
             }
         });
 

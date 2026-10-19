@@ -173,7 +173,7 @@ public sealed class YamlConfigTests : IDisposable
     // Red for slice 4: settings.report was read and never used.
     [Theory]
     [InlineData("excel")]
-    [InlineData("csv")]
+    [InlineData("pdf")]
     [Trait("slice", "4")]
     public void An_unsupported_settings_report_is_an_error(string report)
     {
@@ -201,6 +201,15 @@ public sealed class YamlConfigTests : IDisposable
     public void Settings_report_html_is_accepted()
     {
         var path = File(Settings + "\n  report: \"HTML\"\n" + OnePhase + "\n" + OneGet);
+
+        Assert.Empty(Errors("-y", path, "-o", "report"));
+    }
+
+    [Fact]
+    [Trait("slice", "6")]
+    public void Settings_report_csv_is_accepted()
+    {
+        var path = File(Settings + "\n  report: \"csv\"\n" + OnePhase + "\n" + OneGet);
 
         Assert.Empty(Errors("-y", path, "-o", "report"));
     }
