@@ -236,10 +236,10 @@ public class ManagerTests
         Assert.Equal(100, manager.GetProgress.PercentDone);
     }
 
-    // Latency comes from one Stopwatch reading, and the DateTimes are derived from it, so start,
-    // end and latency agree (BUG-003: two DateTime.UtcNow reads per request).
+    // Latency comes from one Stopwatch reading (BUG-003: two DateTime.UtcNow reads per request).
+    // A result keeps no DateTimes of its own: the timeline point is the only time it stores.
     [Fact]
-    public async Task Latency_is_measured_with_the_stopwatch_and_the_times_agree()
+    public async Task Latency_is_measured_with_the_stopwatch()
     {
         var stub = new StubHttpHandler(async (_, ct) =>
         {
@@ -256,11 +256,8 @@ public class ManagerTests
         {
             // Task.Delay can fire up to a timer tick early; it never comes close to 50 ms early.
             Assert.InRange(d.ResponseTime, TimeSpan.FromMilliseconds(50), TimeSpan.FromSeconds(10));
-            Assert.Equal(d.ResponseTime, d.Latency);
-            Assert.Equal(d.StartTime + d.ResponseTime, d.EndTime);
-            Assert.Equal(d.EndTime, d.RequestReceivedTime);
-            Assert.Equal(d.StartTime, d.RequestSentTime);
-            Assert.Equal(manager.GlobalStartUtc + d.RequestTimeLine, d.EndTime);
+            // The request started after the run did, so its answer is at least its latency in.
+            Assert.True(d.RequestTimeLine >= d.ResponseTime, $"{d.RequestTimeLine} < {d.ResponseTime}");
         });
         var timeline = manager.Results.Select(d => d.RequestTimeLine).ToList();
         Assert.Equal(timeline.OrderBy(t => t), timeline);

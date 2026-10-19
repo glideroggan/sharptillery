@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using SharpArtillery.Models;
 
 namespace SharpArtillery;
@@ -16,37 +17,45 @@ internal static class StatsUtils
     /// <param name="sortedValues">A sorted list of values (ascending order).</param>
     /// <param name="p">The percentile to calculate (0.0 to 1.0, e.g., 0.95 for p95).</param>
     /// <returns>The value at the given percentile, or 0 if the list is empty.</returns>
-    public static double Percentile(List<double> sortedValues, double p)
-    {
-        if (sortedValues.Count == 0)
-            return 0;
+    public static double Percentile(List<double> sortedValues, double p) =>
+        Percentile(CollectionsMarshal.AsSpan(sortedValues), p);
 
-        var idx = (int)Math.Ceiling(p * sortedValues.Count) - 1;
+    /// <inheritdoc cref="Percentile(List{double}, double)"/>
+    public static double Percentile(ReadOnlySpan<double> sortedValues, double p) =>
+        sortedValues.IsEmpty ? 0 : sortedValues[PercentileIndex(sortedValues.Length, p)];
+
+    /// <summary>
+    /// The index <see cref="Percentile(List{double}, double)"/> reads in a sorted list of
+    /// <paramref name="count"/> values (at least one).
+    /// </summary>
+    public static int PercentileIndex(int count, double p)
+    {
+        var idx = (int)Math.Ceiling(p * count) - 1;
 
         if (idx < 0)
             idx = 0;
-        if (idx >= sortedValues.Count)
-            idx = sortedValues.Count - 1;
+        if (idx >= count)
+            idx = count - 1;
 
-        return sortedValues[idx];
+        return idx;
     }
 
     /// <summary>
-    /// Sorts <paramref name="points"/> by the time each answer arrived and sets every point's
-    /// <see cref="DataPoint.Rps"/> to the answers in the one second ending at that point,
-    /// <c>(time - 1 s, time]</c>. One pass with a sliding window, so it is O(n) after the sort.
+    /// Sorts <paramref name="points"/> by their timeline point (when each answer arrived) and sets
+    /// every point's <see cref="DataPoint.Rps"/> to the answers in the one second ending at that
+    /// point, <c>(time - 1 s, time]</c>. One pass with a sliding window, so it is O(n) after the sort.
     /// </summary>
     public static void AssignRps(List<DataPoint> points)
     {
-        points.Sort((a, b) => a.RequestReceivedTime.CompareTo(b.RequestReceivedTime));
+        points.Sort((a, b) => a.RequestTimeLine.CompareTo(b.RequestTimeLine));
 
         var left = 0;
         for (var right = 0; right < points.Count; right++)
         {
             var point = points[right];
-            var windowStart = point.RequestReceivedTime.AddSeconds(-1);
+            var windowStart = point.RequestTimeLine - TimeSpan.FromSeconds(1);
 
-            while (left <= right && points[left].RequestReceivedTime <= windowStart)
+            while (left <= right && points[left].RequestTimeLine <= windowStart)
                 left++;
 
             point.Rps = right - left + 1;

@@ -61,7 +61,6 @@ internal sealed partial class FlowExecutor
     /// </summary>
     private async Task<DataPoint> ExecuteThinkAsync(double seconds, CancellationToken cancellationToken)
     {
-        var startTime = DateTime.UtcNow;
         var delay = TimeSpan.FromSeconds(seconds);
         
         try
@@ -76,12 +75,7 @@ internal sealed partial class FlowExecutor
         // Think steps don't count as requests - return a marker DataPoint
         return new DataPoint
         {
-            StartTime = startTime,
-            EndTime = DateTime.UtcNow,
-            RequestSentTime = startTime,
-            RequestReceivedTime = DateTime.UtcNow,
             ResponseTime = delay,
-            Latency = TimeSpan.Zero,
             RequestTimeLine = _globalTimer.Elapsed,
             PhaseName = _vu.PhaseName,
             Status = 0, // No HTTP status for think steps
@@ -99,12 +93,11 @@ internal sealed partial class FlowExecutor
         RequestSpec spec, 
         CancellationToken cancellationToken)
     {
+        var startTime = DateTime.UtcNow;
         var dataPoint = new DataPoint
         {
-            StartTime = DateTime.UtcNow,
             PhaseName = _vu.PhaseName
         };
-        dataPoint.RequestSentTime = dataPoint.StartTime;
 
         // Build the full URL with interpolation
         var url = _vu.BaseTarget + Interpolate(spec.Url ?? "");
@@ -169,7 +162,6 @@ internal sealed partial class FlowExecutor
                     request.Content.Headers.TryAddWithoutValidation(key, Interpolate(value));
                 }
             }
-            dataPoint.RequestContentLengthBytes = request.Content.Headers.ContentLength;
         }
 
         string? responseBody = null;
@@ -185,7 +177,6 @@ internal sealed partial class FlowExecutor
             
             dataPoint.Status = response.StatusCode;
             dataPoint.HasResponse = true;
-            dataPoint.ProtocolVersion = response.Version.ToString();
             dataPoint.ResponseContentLengthBytes = response.Content.Headers.ContentLength;
             
             // Read response body for captures
@@ -224,10 +215,7 @@ internal sealed partial class FlowExecutor
             dataPoint.Error = e.Message;
         }
 
-        dataPoint.RequestReceivedTime = DateTime.UtcNow;
-        dataPoint.EndTime = DateTime.UtcNow;
-        dataPoint.ResponseTime = dataPoint.EndTime - dataPoint.StartTime;
-        dataPoint.Latency = dataPoint.ResponseTime;
+        dataPoint.ResponseTime = DateTime.UtcNow - startTime;
         dataPoint.RequestTimeLine = _globalTimer.Elapsed;
 
         return dataPoint;

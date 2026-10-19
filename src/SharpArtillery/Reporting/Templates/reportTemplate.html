@@ -10,11 +10,34 @@
     <script id="summary" type="application/json">
         <# PUT SUMMARY HERE #>
     </script>
-    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <script type="text/javascript">
+/*!
+ * Chart.js is included in this report, so the report needs no network to show its charts.
+ *
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2014-2024 Chart.js Contributors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+ * documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+ * permit persons to whom the Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+ * the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+ * THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+ * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
+ */
+<# CHART JS #>
+    </script>
     <style>
         /* Phase 2.1: Responsive Container Layout */
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background: #f8fafc;
@@ -22,7 +45,7 @@
             color: #1e293b;
             line-height: 1.5;
         }
-        
+
         .container {
             max-width: 1400px;
             margin: 0 auto;
@@ -31,11 +54,11 @@
             padding: 48px;
             box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
         }
-        
+
         .section {
             margin-bottom: 48px;
         }
-        
+
         /* Phase 2.5: Section Titles */
         .section-title {
             font-size: 18px;
@@ -45,29 +68,40 @@
             padding-bottom: 12px;
             border-bottom: 2px solid #e2e8f0;
         }
-        
+
         .chart-wrapper {
             width: 100%;
             overflow-x: auto;
         }
-        
+
+        /* Chart.js fills its box; the box sets the height. */
+        .chart-box {
+            position: relative;
+            width: 100%;
+        }
+
+        .chart-main { height: 500px; }
+        .chart-status { height: 320px; }
+        .chart-errors { height: 420px; }
+
         /* Phase 2.4: Two-Column Layout */
         .two-column {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 32px;
         }
-        
+
         @media (max-width: 1024px) {
             .two-column { grid-template-columns: 1fr; }
             .container { padding: 24px; }
         }
-        
+
         @media (max-width: 768px) {
             body { padding: 12px; }
             .section-title { font-size: 16px; }
+            .chart-main { height: 360px; }
         }
-        
+
         /* Phase 2.3: Report Header */
         .report-header h1 {
             font-size: 28px;
@@ -75,7 +109,7 @@
             margin-bottom: 8px;
             color: #0f172a;
         }
-        
+
         .report-header .endpoint {
             color: #64748b;
             font-size: 16px;
@@ -83,7 +117,7 @@
             font-family: "SF Mono", "Fira Code", Consolas, monospace;
             word-break: break-all;
         }
-        
+
         .report-meta {
             display: flex;
             gap: 32px;
@@ -95,15 +129,15 @@
             color: #475569;
             flex-wrap: wrap;
         }
-        
+
         .report-meta strong {
             color: #1e293b;
         }
-        
+
         @media (max-width: 768px) {
             .report-meta { flex-direction: column; gap: 8px; }
         }
-        
+
         /* Phase 2.2: KPI Summary Cards */
         .kpi-cards {
             display: grid;
@@ -111,34 +145,34 @@
             gap: 20px;
             margin-bottom: 40px;
         }
-        
+
         .kpi-card {
             padding: 24px;
             border-radius: 12px;
             text-align: center;
             color: white;
         }
-        
+
         /* Phase 3.1: Custom Color Palette */
         .kpi-rps { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
         .kpi-latency { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
         .kpi-errors { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
         .kpi-requests { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
-        
+
         .kpi-value {
             font-size: 32px;
             font-weight: 700;
             margin-bottom: 8px;
             font-family: "SF Mono", "Fira Code", Consolas, monospace;
         }
-        
+
         .kpi-label {
             font-size: 13px;
             opacity: 0.9;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
-        
+
         /* Phase 1.1: Empty Error State */
         .empty-state {
             width: 100%;
@@ -150,80 +184,84 @@
             border-radius: 12px;
             border: 2px dashed #86efac;
         }
-        
+
         .empty-state-content {
             text-align: center;
         }
-        
+
         .empty-state h3 {
             color: #166534;
             margin: 16px 0 8px;
             font-size: 20px;
             font-weight: 600;
         }
-        
+
         .empty-state p {
             color: #4ade80;
             margin: 0;
             font-size: 14px;
         }
-        
+
         /* Phase 3.2: Improved Table Styling */
-        .google-visualization-table-table {
-            font-family: inherit !important;
-            border-collapse: collapse !important;
-            width: 100% !important;
+        .table-wrapper {
+            width: 100%;
+            overflow-x: auto;
         }
-        
-        .google-visualization-table-table th {
-            background: #f8fafc !important;
-            color: #475569 !important;
-            font-weight: 600 !important;
-            text-transform: uppercase !important;
-            font-size: 12px !important;
-            letter-spacing: 0.5px !important;
-            padding: 12px 16px !important;
-            border-bottom: 2px solid #e2e8f0 !important;
+
+        .report-table {
+            font-family: inherit;
+            border-collapse: collapse;
+            width: 100%;
         }
-        
-        .google-visualization-table-table td {
-            padding: 12px 16px !important;
-            border-bottom: 1px solid #f1f5f9 !important;
-            font-size: 14px !important;
+
+        .report-table th {
+            background: #f8fafc;
+            color: #475569;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 0.5px;
+            padding: 12px 16px;
+            border-bottom: 2px solid #e2e8f0;
+            text-align: left;
         }
-        
-        .google-visualization-table-table tr:hover td {
-            background: #f8fafc !important;
+
+        .report-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 14px;
         }
-        
-        /* Keyboard focus styles */
-        .google-visualization-table-table th:focus,
-        .google-visualization-table-table td:focus {
-            outline: 2px solid #8b5cf6;
-            outline-offset: -2px;
+
+        .report-table .num {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
         }
-        
+
+        .report-table tr:hover td {
+            background: #f8fafc;
+        }
+
         /* Phase 3.3: Print Stylesheet */
         @media print {
-            body { 
-                background: white; 
-                padding: 0; 
+            body {
+                background: white;
+                padding: 0;
             }
-            
-            .container { 
-                box-shadow: none; 
-                padding: 20px; 
+
+            .container {
+                box-shadow: none;
+                padding: 20px;
             }
-            
+
             .kpi-card {
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
             }
-            
+
             .chart-wrapper {
                 page-break-inside: avoid;
             }
-            
+
             .section {
                 page-break-inside: avoid;
             }
@@ -240,8 +278,13 @@
             neutral: '#64748b'     // Slate - secondary
         };
 
-        google.charts.load('current', {'packages':['line', 'scatter', 'corechart', 'table']});
-        google.charts.setOnLoadCallback(drawAll);
+        Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        Chart.defaults.color = '#475569';
+        // A run can have thousands of seconds; drawing the final state at once keeps opening fast.
+        Chart.defaults.animation = false;
+        Chart.defaults.maintainAspectRatio = false;
+
+        document.addEventListener('DOMContentLoaded', drawAll);
 
         const groupBy = function (xs, key) {
             return xs.reduce(function (rv, x) {
@@ -250,9 +293,41 @@
             }, {});
         };
 
+        const readJson = (id) => JSON.parse(document.getElementById(id).textContent);
+
+        // Builds a table with textContent only, so an endpoint or error text is never read as HTML.
+        // A column is { title, numeric }; a number cell is shown with the reader's digit grouping.
+        function renderTable(containerId, columns, rows) {
+            const table = document.createElement('table');
+            table.className = 'report-table';
+
+            const headRow = table.createTHead().insertRow();
+            for (const column of columns) {
+                const th = document.createElement('th');
+                th.textContent = column.title;
+                if (column.numeric) th.className = 'num';
+                headRow.appendChild(th);
+            }
+
+            const body = table.createTBody();
+            for (const row of rows) {
+                const tr = body.insertRow();
+                row.forEach((value, i) => {
+                    const td = tr.insertCell();
+                    td.textContent = typeof value === 'number' ? value.toLocaleString() : String(value);
+                    if (columns[i].numeric) td.className = 'num';
+                });
+            }
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'table-wrapper';
+            wrapper.appendChild(table);
+            document.getElementById(containerId).replaceChildren(wrapper);
+        }
+
         // Phase 2.3: Report Header with Metadata
         function drawReportMeta() {
-            const s = JSON.parse(document.getElementById('summary').textContent);
+            const s = readJson('summary');
             document.getElementById('report-endpoint').textContent = s.endpoint || '-';
             document.getElementById('report-timestamp').textContent = new Date().toLocaleString();
             document.getElementById('report-duration').textContent = s.durationSeconds.toFixed(1) + 's';
@@ -260,7 +335,7 @@
 
         // Phase 2.2: KPI Summary Cards
         function drawSummaryCards() {
-            const s = JSON.parse(document.getElementById('summary').textContent);
+            const s = readJson('summary');
             document.getElementById('kpi-rps').textContent = s.averageRps.toFixed(1);
             document.getElementById('kpi-p95').textContent = s.p95LatencyMs.toFixed(1) + ' ms';
             document.getElementById('kpi-errors').textContent = (s.errorRatio * 100).toFixed(2) + '%';
@@ -268,15 +343,11 @@
         }
 
         function drawSummaryTable() {
-            let data = new google.visualization.DataTable();
-            data.addColumn('string', 'Metric');
-            data.addColumn('string', 'Value');
-
-            const s = JSON.parse(document.getElementById('summary').textContent);
+            const s = readJson('summary');
             const pct = (x) => (x * 100).toFixed(2) + '%';
             const ms = (x) => (x).toFixed(2) + ' ms';
 
-            data.addRows([
+            renderTable('summary_div', [{ title: 'Metric' }, { title: 'Value' }], [
                 ['Endpoint', String(s.endpoint)],
                 ['Duration', (s.durationSeconds).toFixed(2) + ' s'],
                 ['Requests', String(s.requests)],
@@ -299,35 +370,32 @@
                 ['p95 latency', ms(s.p95LatencyMs)],
                 ['p99 latency', ms(s.p99LatencyMs)]
             ]);
-
-            var table = new google.visualization.Table(document.getElementById('summary_div'));
-            table.draw(data, {showRowNumber: false, width: '100%', height: '100%'});
         }
 
         function drawPhaseTable() {
-            const s = JSON.parse(document.getElementById('summary').textContent);
+            const s = readJson('summary');
             const phases = s.phaseBreakdown ?? [];
-            
+
             // If no phase data, fall back to time-series grouping
             if (phases.length === 0) {
                 drawPhaseTableFromTimeSeries();
                 return;
             }
-            
-            let data = new google.visualization.DataTable();
-            data.addColumn('string', 'Phase');
-            data.addColumn('number', 'Requests');
-            data.addColumn('number', 'Duration (s)');
-            data.addColumn('number', 'Avg RPS');
-            data.addColumn('number', 'Mean Latency (ms)');
-            data.addColumn('number', 'p50 (ms)');
-            data.addColumn('number', 'p95 (ms)');
-            data.addColumn('number', 'p99 (ms)');
-            data.addColumn('number', 'Error %');
 
             const pct = (x) => (x * 100);
-            
-            data.addRows(phases.map(p => [
+            const numeric = (title) => ({ title, numeric: true });
+
+            renderTable('phase_div', [
+                { title: 'Phase' },
+                numeric('Requests'),
+                numeric('Duration (s)'),
+                numeric('Avg RPS'),
+                numeric('Mean Latency (ms)'),
+                numeric('p50 (ms)'),
+                numeric('p95 (ms)'),
+                numeric('p99 (ms)'),
+                numeric('Error %')
+            ], phases.map(p => [
                 p.phase,
                 p.requests,
                 Math.round(p.durationSeconds * 10) / 10,
@@ -338,19 +406,10 @@
                 Math.round(p.p99LatencyMs * 100) / 100,
                 Math.round(pct(p.errorRatio) * 100) / 100
             ]));
-
-            var table = new google.visualization.Table(document.getElementById('phase_div'));
-            table.draw(data, {showRowNumber: false, width: '100%', height: '100%'});
         }
-        
-        function drawPhaseTableFromTimeSeries() {
-            let data = new google.visualization.DataTable();
-            data.addColumn('string', 'Phase');
-            data.addColumn('number', 'Mean latency (ms)');
-            data.addColumn('number', 'Mean RPS');
-            data.addColumn('number', 'Error ratio');
 
-            let dataRows = JSON.parse(document.getElementById('data').textContent);
+        function drawPhaseTableFromTimeSeries() {
+            let dataRows = readJson('data');
             let groupedByPhase = groupBy(dataRows, 'phase');
 
             const avg = (arr, key) => arr.reduce((p, c) => p + c[key], 0) / arr.length;
@@ -365,46 +424,52 @@
                 ]);
             }
 
-            data.addRows(rows);
-            var table = new google.visualization.Table(document.getElementById('phase_div'));
-            table.draw(data, {showRowNumber: false, width: '100%', height: '100%'});
+            renderTable('phase_div', [
+                { title: 'Phase' },
+                { title: 'Mean latency (ms)', numeric: true },
+                { title: 'Mean RPS', numeric: true },
+                { title: 'Error ratio', numeric: true }
+            ], rows);
         }
 
         function drawStatusHistogramTable() {
-            const s = JSON.parse(document.getElementById('summary').textContent);
+            const s = readJson('summary');
             const items = s.statusHistogram ?? [];
 
-            let data = new google.visualization.DataTable();
-            data.addColumn('string', 'Status');
-            data.addColumn('number', 'Count');
-            data.addColumn({ type: 'string', role: 'tooltip' });
-
-            data.addRows(items.map(o => {
-                const status = String(o.statusCode);
-                const count = Number(o.count);
-                const ratio = Number(o.ratio);
-                const tooltip = `${status}: ${count} (${(ratio * 100).toFixed(2)}%)`;
-                return [status, count, tooltip];
-            }));
-
-            const options = {
-                title: 'Status code distribution',
-                width: '100%',
-                height: 320,
-                legend: { position: 'none' },
-                chartArea: { left: 60, right: 20, top: 50, bottom: 60 },
-                hAxis: { title: 'HTTP status' },
-                vAxis: { title: 'Count', minValue: 0 },
-                colors: [CHART_COLORS.success]
-            };
-
-            const chart = new google.visualization.ColumnChart(document.getElementById('status_div'));
-            chart.draw(data, options);
+            new Chart(document.getElementById('status_chart'), {
+                type: 'bar',
+                data: {
+                    labels: items.map(o => String(o.statusCode)),
+                    datasets: [{
+                        label: 'Count',
+                        data: items.map(o => Number(o.count)),
+                        backgroundColor: CHART_COLORS.success
+                    }]
+                },
+                options: {
+                    plugins: {
+                        title: { display: true, text: 'Status code distribution' },
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => {
+                                    const o = items[ctx.dataIndex];
+                                    return `${o.statusCode}: ${o.count} (${(Number(o.ratio) * 100).toFixed(2)}%)`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { title: { display: true, text: 'HTTP status' } },
+                        y: { title: { display: true, text: 'Count' }, beginAtZero: true }
+                    }
+                }
+            });
         }
 
         // Phase 1.1: Empty Error Chart State Handler
         function drawErrorHistogramTable() {
-            const s = JSON.parse(document.getElementById('summary').textContent);
+            const s = readJson('summary');
             const items = s.errorHistogram ?? [];
 
             // Handle empty state with friendly message
@@ -418,7 +483,7 @@
                                 <polyline points="22 4 12 14.01 9 11.01"></polyline>
                             </svg>
                             <h3>No Errors Detected</h3>
-                            <p>All ${s.requests} requests completed successfully</p>
+                            <p>All ${Number(s.requests)} requests completed successfully</p>
                         </div>
                     </div>
                 `;
@@ -429,46 +494,40 @@
             const topN = 12;
             const topItems = items.slice(0, topN);
 
-            let data = new google.visualization.DataTable();
-            data.addColumn('string', 'Error');
-            data.addColumn('number', 'Count');
-            data.addColumn({ type: 'string', role: 'tooltip' });
-
-            data.addRows(topItems.map(o => {
-                const label = String(o.error);
-                const count = Number(o.count);
-                const ratio = Number(o.ratio);
-                const tooltip = `${label}: ${count} (${(ratio * 100).toFixed(2)}% of errors)`;
-                return [label, count, tooltip];
-            }));
-
-            const options = {
-                title: 'Top error types',
-                width: '100%',
-                height: 420,
-                legend: { position: 'none' },
-                chartArea: { left: 320, right: 20, top: 50, bottom: 30 },
-                hAxis: { title: 'Count', minValue: 0 },
-                vAxis: { title: '' },
-                colors: [CHART_COLORS.error]
-            };
-
-            const chart = new google.visualization.BarChart(document.getElementById('error_div'));
-            chart.draw(data, options);
+            new Chart(document.getElementById('error_chart'), {
+                type: 'bar',
+                data: {
+                    labels: topItems.map(o => String(o.error)),
+                    datasets: [{
+                        label: 'Count',
+                        data: topItems.map(o => Number(o.count)),
+                        backgroundColor: CHART_COLORS.error
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    plugins: {
+                        title: { display: true, text: 'Top error types' },
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => {
+                                    const o = topItems[ctx.dataIndex];
+                                    return `${o.error}: ${o.count} (${(Number(o.ratio) * 100).toFixed(2)}% of errors)`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { title: { display: true, text: 'Count' }, beginAtZero: true }
+                    }
+                }
+            });
         }
-        
-        function drawMainChart() {
-            let data = new google.visualization.DataTable();
-            data.addColumn('number', 'Time');
-            data.addColumn('number', 'Mean latency (ms)');
-            data.addColumn('number', 'RPS');
-            data.addColumn('number', 'Error ratio');
 
-            let rows = JSON.parse(document.getElementById('data').textContent);
-                
-            data.addRows(rows.map(o => {
-                return [o['time'], o['meanLatencyMs'], o['rps'], o['errorRatio']]
-            }));
+        function drawMainChart() {
+            const s = readJson('summary');
+            let rows = readJson('data');
 
             const maxErrorRatio = rows.reduce((p, c) => Math.max(p, c['errorRatio'] ?? 0), 0);
             const errorAxisMax = Math.max(0.02, maxErrorRatio * 1.2);
@@ -479,61 +538,103 @@
 
             // Phase 1.2: P95-based latency axis scaling
             const allLatencies = rows.map(r => r['meanLatencyMs']).filter(l => l > 0).sort((a,b) => a-b);
-            const p95Latency = allLatencies.length > 0 
+            const p95Latency = allLatencies.length > 0
                 ? allLatencies[Math.floor(allLatencies.length * 0.95)]
                 : 100;
             const latencyAxisMax = Math.ceil(p95Latency * 1.5); // 50% headroom above p95
 
-            let chartDiv = document.getElementById('linechart_material')
+            const points = (key) => rows.map(o => ({ x: o['time'], y: o[key] }));
 
-            // Phase 1.3 & 1.4: Reduce gridline density and fix axis crowding
-            var options = {
-                title: 'Latency, RPS, and errors over time',
-                subtitle: '<# ENDPOINT #>',
-                width: '100%',
-                height: 500,
-                chartArea: {
-                    left: 90,
-                    right: 90,  // Increased for error % axis
-                    top: 70,
-                    bottom: 60
+            // Phase 1.3 & 1.4: Reduce gridline density and keep the right-hand axes apart
+            new Chart(document.getElementById('main_chart'), {
+                data: {
+                    datasets: [
+                        {
+                            type: 'line',
+                            label: 'Mean latency (ms)',
+                            data: points('meanLatencyMs'),
+                            yAxisID: 'latency',
+                            borderColor: CHART_COLORS.latency,
+                            backgroundColor: CHART_COLORS.latency,
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            order: 1
+                        },
+                        {
+                            type: 'bar',
+                            label: 'RPS',
+                            data: points('rps'),
+                            yAxisID: 'rps',
+                            backgroundColor: CHART_COLORS.rps + '99',
+                            order: 2
+                        },
+                        {
+                            type: 'line',
+                            label: 'Error ratio',
+                            data: points('errorRatio'),
+                            yAxisID: 'errors',
+                            borderColor: CHART_COLORS.error,
+                            backgroundColor: CHART_COLORS.error,
+                            borderWidth: 3,
+                            pointRadius: 4,
+                            order: 0
+                        }
+                    ]
                 },
-                seriesType: 'line',
-                series: {
-                    0: { targetAxisIndex: 0, color: CHART_COLORS.latency },
-                    1: { targetAxisIndex: 1, type: 'bars', color: CHART_COLORS.rps },
-                    2: { targetAxisIndex: 2, lineWidth: 3, pointSize: 4, color: CHART_COLORS.error }
-                },
-                hAxis: {
-                    title: 'Time (s)',
-                    viewWindow: { min: 0, max: timeAxisMax },
-                    gridlines: { count: Math.min(10, Math.ceil(timeAxisMax / 5)) }  // Phase 1.3
-                },
-                vAxes: {
-                    0: { 
-                        title: 'Latency (ms)',
-                        viewWindow: { min: 0, max: latencyAxisMax },  // Phase 1.2
-                        gridlines: { count: 5 }  // Phase 1.3
+                options: {
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        title: { display: true, text: 'Latency, RPS, and errors over time' },
+                        subtitle: { display: true, text: String(s.endpoint) },
+                        tooltip: {
+                            callbacks: {
+                                title: (items) => items.length > 0 ? `${items[0].parsed.x} s` : '',
+                                label: (ctx) => ctx.dataset.yAxisID === 'errors'
+                                    ? `${ctx.dataset.label}: ${(ctx.parsed.y * 100).toFixed(2)}%`
+                                    : `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString()}`
+                            }
+                        }
                     },
-                    1: { 
-                        title: 'RPS',
-                        gridlines: { color: 'transparent' }  // Phase 1.3
-                    },
-                    2: {
-                        title: 'Error %',  // Phase 1.4
-                        format: 'percent',
-                        viewWindow: { min: errorAxisMin, max: errorAxisMax },
-                        textPosition: 'out',  // Phase 1.4: Changed from 'in'
-                        textStyle: { fontSize: 11 },
-                        gridlines: { color: 'transparent' }
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            min: 0,
+                            max: timeAxisMax,
+                            title: { display: true, text: 'Time (s)' },
+                            ticks: { maxTicksLimit: 11, precision: 0 }  // Phase 1.3
+                        },
+                        latency: {
+                            type: 'linear',
+                            position: 'left',
+                            min: 0,
+                            max: latencyAxisMax,  // Phase 1.2
+                            title: { display: true, text: 'Latency (ms)' },
+                            ticks: { maxTicksLimit: 6 }  // Phase 1.3
+                        },
+                        rps: {
+                            type: 'linear',
+                            position: 'right',
+                            beginAtZero: true,
+                            title: { display: true, text: 'RPS' },
+                            grid: { drawOnChartArea: false }  // Phase 1.3
+                        },
+                        errors: {
+                            type: 'linear',
+                            position: 'right',
+                            min: errorAxisMin,
+                            max: errorAxisMax,
+                            title: { display: true, text: 'Error %' },  // Phase 1.4
+                            ticks: {
+                                font: { size: 11 },
+                                callback: (value) => (value * 100).toFixed(1) + '%'
+                            },
+                            grid: { drawOnChartArea: false }
+                        }
                     }
                 }
-            };
-
-            const materialChart = new google.visualization.ComboChart(chartDiv);
-            materialChart.draw(data, options);
+            });
         }
-        
+
         function drawAll() {
             drawReportMeta();
             drawSummaryCards();
@@ -552,13 +653,13 @@
             <h1>Load Test Report</h1>
             <p class="endpoint" id="report-endpoint">-</p>
         </div>
-        
+
         <div class="report-meta">
             <div><strong>Generated:</strong> <span id="report-timestamp">-</span></div>
             <div><strong>Duration:</strong> <span id="report-duration">-</span></div>
             <div><strong>Tool:</strong> Sharptillery</div>
         </div>
-        
+
         <!-- Phase 2.2: KPI Cards -->
         <div class="kpi-cards">
             <div class="kpi-card kpi-rps">
@@ -578,15 +679,17 @@
                 <div class="kpi-label">Total Requests</div>
             </div>
         </div>
-        
+
         <!-- Phase 2.5: Section with Title -->
         <div class="section">
             <h2 class="section-title">Performance Over Time</h2>
             <div class="chart-wrapper">
-                <div id="linechart_material" role="img" aria-label="Time series chart showing mean latency, requests per second, and error rate over the test duration"></div>
+                <div class="chart-box chart-main" id="linechart_material">
+                    <canvas id="main_chart" role="img" aria-label="Time series chart showing mean latency, requests per second, and error rate over the test duration"></canvas>
+                </div>
             </div>
         </div>
-        
+
         <!-- Phase 2.4: Two-Column Layout -->
         <div class="section two-column">
             <div>
@@ -598,18 +701,22 @@
                 <div id="phase_div"></div>
             </div>
         </div>
-        
+
         <div class="section">
             <h2 class="section-title">HTTP Status Distribution</h2>
             <div class="chart-wrapper">
-                <div id="status_div" role="img" aria-label="Bar chart showing distribution of HTTP status codes"></div>
+                <div class="chart-box chart-status" id="status_div">
+                    <canvas id="status_chart" role="img" aria-label="Bar chart showing distribution of HTTP status codes"></canvas>
+                </div>
             </div>
         </div>
-        
+
         <div class="section">
             <h2 class="section-title">Error Analysis</h2>
             <div class="chart-wrapper">
-                <div id="error_div" role="img" aria-label="Bar chart showing distribution of error types"></div>
+                <div class="chart-box chart-errors" id="error_div">
+                    <canvas id="error_chart" role="img" aria-label="Bar chart showing distribution of error types"></canvas>
+                </div>
             </div>
         </div>
     </div>

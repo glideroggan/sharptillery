@@ -60,6 +60,10 @@
     <EmbeddedResource Include="Reporting\Templates\reportTemplate.html">
       <Link>Reporting\Templates\reportTemplate.html</Link>
     </EmbeddedResource>
+    <!-- Chart.js 4.5.1 (MIT), the npm package's dist/chart.umd.min.js unchanged. -->
+    <EmbeddedResource Include="Reporting\Templates\chart.umd.min.js">
+      <Link>Reporting\Templates\chart.umd.min.js</Link>
+    </EmbeddedResource>
     <EmbeddedResource Include="Reporting\Templates\reportTemplate.xlsx">
       <Link>Reporting\Templates\reportTemplate.xlsx</Link>
     </EmbeddedResource>

@@ -118,3 +118,5 @@ Planned work and ideas are in [docs/roadmap.md](https://github.com/glideroggan/s
 ## License
 
 MIT. See [LICENSE](https://github.com/glideroggan/sharptillery/blob/main/LICENSE).
+
+The HTML report draws its charts with [Chart.js](https://www.chartjs.org) 4.5.1 (MIT licence, Copyright (c) 2014-2024 Chart.js Contributors). Chart.js is written into every report together with its licence notice, so a report opened without a network still shows its charts.

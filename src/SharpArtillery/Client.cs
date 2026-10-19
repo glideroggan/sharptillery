@@ -67,8 +67,7 @@ internal sealed class Client
                 using var req = template.Build();
                 var requestResults = new DataPoint
                 {
-                    PhaseName = _manager.Settings.PhaseName,
-                    RequestContentLengthBytes = req.Content?.Headers.ContentLength
+                    PhaseName = _manager.Settings.PhaseName
                 };
 
                 var startedAt = Stopwatch.GetTimestamp();
@@ -82,7 +81,6 @@ internal sealed class Client
                         .ConfigureAwait(false);
                     requestResults.Status = res.StatusCode;
                     requestResults.HasResponse = true;
-                    requestResults.ProtocolVersion = res.Version.ToString();
                     requestResults.ResponseContentLengthBytes = res.Content.Headers.ContentLength;
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -123,17 +121,10 @@ internal sealed class Client
                     requestResults.Error = e.Message;
                 }
 
-                // One stopwatch reading gives the latency; the DateTimes are derived from it and the
-                // run's start, so start, end and latency always agree.
-                var latency = Stopwatch.GetElapsedTime(startedAt);
-                requestResults.ResponseTime = latency;
-                requestResults.Latency = latency;
+                // One stopwatch reading gives the latency, so a request never reads two clocks.
+                requestResults.ResponseTime = Stopwatch.GetElapsedTime(startedAt);
                 // Use GlobalTimeTimer for report timeline (spans all phases)
                 requestResults.RequestTimeLine = _manager.GlobalTimeTimer.Elapsed;
-                requestResults.EndTime = _manager.GlobalStartUtc + requestResults.RequestTimeLine;
-                requestResults.RequestReceivedTime = requestResults.EndTime;
-                requestResults.StartTime = requestResults.EndTime - latency;
-                requestResults.RequestSentTime = requestResults.StartTime;
 
                 // No token here: a result that is already measured is kept even when the phase has
                 // just ended, and the manager reads until this client has stopped.

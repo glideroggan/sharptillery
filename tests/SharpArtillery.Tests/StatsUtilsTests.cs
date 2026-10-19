@@ -44,7 +44,7 @@ public class StatsUtilsTests
 
     private static DataPoint At(double seconds) => new()
     {
-        RequestReceivedTime = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(seconds)
+        RequestTimeLine = TimeSpan.FromSeconds(seconds)
     };
 
     // Blast and flow mode share this one helper, so the report counts both the same way.
@@ -58,7 +58,7 @@ public class StatsUtilsTests
         StatsUtils.AssignRps(points);
 
         Assert.Equal(new[] { 0.0, 0.5, 1.0, 1.5, 2.0 },
-            points.Select(p => (p.RequestReceivedTime - At(0).RequestReceivedTime).TotalSeconds));
+            points.Select(p => p.RequestTimeLine.TotalSeconds));
         // The window is (t - 1 s, t]: a point exactly one second earlier is outside it.
         Assert.Equal(new[] { 1, 2, 2, 2, 2 }, points.Select(p => p.Rps));
     }

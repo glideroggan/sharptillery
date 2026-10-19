@@ -38,12 +38,6 @@ internal sealed class Manager : IDisposable
     /// </summary>
     public readonly Stopwatch GlobalTimeTimer = new();
 
-    /// <summary>
-    /// Wall-clock time at which <see cref="GlobalTimeTimer"/> started. The clients derive every
-    /// DateTime of a data point from it and the stopwatch, so one request never reads two clocks.
-    /// </summary>
-    public DateTime GlobalStartUtc { get; private set; }
-
     public Settings Settings { get; private set; } = new();
     private int _averageRps;
     private readonly ICustomHttpClientFactory _httpClientFactory;
@@ -360,10 +354,7 @@ internal sealed class Manager : IDisposable
 
         // Start global timer only once (spans all phases for report timeline)
         if (!GlobalTimeTimer.IsRunning)
-        {
-            GlobalStartUtc = DateTime.UtcNow;
             GlobalTimeTimer.Start();
-        }
 
         // The duration counts from the moment the gate opens, not from PrepareForTest.
         using var phaseEnd = Settings.Duration is { } duration

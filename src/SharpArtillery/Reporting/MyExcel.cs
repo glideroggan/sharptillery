@@ -22,9 +22,10 @@ namespace SharpArtillery.Reporting
         public void Create(string outputPath, List<DataPoint> requestData)
         {
             // create an excel https://docs.microsoft.com/en-us/office/open-xml/how-to-insert-a-chart-into-a-spreadsheet
-            requestData.Sort((a, b) =>
-                a.RequestSentTime < b.RequestSentTime ? -1 :
-                a.RequestSentTime == b.RequestSentTime ? 0 : 1);
+            // A result stores when its answer came, on the run's timeline, and its latency; the
+            // send time is the one minus the other.
+            static TimeSpan Sent(DataPoint d) => d.RequestTimeLine - d.ResponseTime;
+            requestData.Sort((a, b) => Sent(a).CompareTo(Sent(b)));
 
             // copy template to new file to edit the report
             using var stream =
@@ -43,11 +44,11 @@ namespace SharpArtillery.Reporting
                                ?? workSheetPart.Worksheet.AppendChild(new SheetData());
                 foreach (var data in requestData)
                 {
-                    spreadSheet.InsertData(sheetData, $"{data.RequestSentTime:O}", "A", row, CellValues.String);
-                    spreadSheet.InsertData(sheetData, $"{data.RequestReceivedTime:O}", "B", row, CellValues.String);
-                    spreadSheet.InsertData(sheetData, data.Latency.TotalMilliseconds, "C", row, CellValues.Number);
+                    spreadSheet.InsertData(sheetData, $"{Sent(data):c}", "A", row, CellValues.String);
+                    spreadSheet.InsertData(sheetData, $"{data.RequestTimeLine:c}", "B", row, CellValues.String);
+                    spreadSheet.InsertData(sheetData, data.ResponseTime.TotalMilliseconds, "C", row, CellValues.Number);
                     spreadSheet.InsertData(sheetData, data.Status.ToString(), "D", row, CellValues.String);
-                    spreadSheet.InsertData(sheetData, data.RequestRate, "E", row, CellValues.Number);
+                    spreadSheet.InsertData(sheetData, data.Rps, "E", row, CellValues.Number);
                     row++;
                 }
 

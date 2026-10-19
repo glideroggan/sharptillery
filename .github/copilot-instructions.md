@@ -13,7 +13,7 @@ Core flow:
 - CLI args/YAML are parsed into `ArtilleryConfig` in `src/SharpArtillery/CommandLineParser.cs` (`BuildConfig`; YAML is loaded by `YamlHelper.ReadYaml`).
 - `src/SharpArtillery/MainService.cs` maps config into runtime `Settings` and orchestrates test execution.
 - `src/SharpArtillery/Manager.cs` owns the run loop (blast mode). `PrepareForTest` builds a `RequestTemplate` for the phase, creates the clients and starts their tasks parked on a `TaskCompletionSource` start gate (`Manager.Started`). `RunTest` is async: it opens the gate, arms the duration timer, and awaits a `Channel<DataPoint>` together with a 1 s `PeriodicTimer`, so the loop sleeps between results and progress lines (no busy loop). It publishes a new `Progress` snapshot per tick (`GetProgress`): requests, error ratio and "% done" are per phase, RPS and mean latency are for the last tick.
-- `src/SharpArtillery/Client.cs` is the worker: it waits at the gate, then loops: rate limiter (if `-r`), `Manager.TryClaimRequest()` (the shared Interlocked `-n` counter; always true with `-d`), `RequestTemplate.Build()` right before the send, `HttpClient.SendAsync`, and `Manager.ResultWriter.WriteAsync(dataPoint, CancellationToken.None)`. Latency is one `Stopwatch` reading; the `DateTime` fields are derived from `Manager.GlobalStartUtc` plus the timeline.
+- `src/SharpArtillery/Client.cs` is the worker: it waits at the gate, then loops: rate limiter (if `-r`), `Manager.TryClaimRequest()` (the shared Interlocked `-n` counter; always true with `-d`), `RequestTemplate.Build()` right before the send, `HttpClient.SendAsync`, and `Manager.ResultWriter.WriteAsync(dataPoint, CancellationToken.None)`. Latency is one `Stopwatch` reading; the result's only time is its point on `Manager.GlobalTimeTimer` (`RequestTimeLine`), with no `DateTime` fields.
 - Phase end: the duration timer (or the `-n` counter running out, or auto-tune) cancels the clients; `RunTest` then awaits every client task, completes the channel and drains it, so no result can land in the next phase. A request still in flight at that moment is dropped and counted in `Progress.CancelledAtPhaseEnd` (printed as "cancelled at phase end"), not recorded as a 500.
 - `Manager` takes an optional `TimeProvider` (progress ticker, duration timer, auto-tune interval). Tests pass a `FakeTimeProvider` and advance it instead of sleeping. The per-request timeout and the `ClientRateLimiter` still use the system clock.
 
@@ -39,7 +39,9 @@ Core flow:
 ## Reporting and results
 
 - Results are `DataPoint` structs (`src/SharpArtillery/Models/DataPoint.cs`). HTML reporting groups into 1-second buckets using `DataPoint.RequestTimeLine` and uses `DataPoint.PhaseName` when present.
-- HTML report generation is in `src/SharpArtillery/Reporting/HtmlReport.cs` and fills placeholders in the embedded template `src/SharpArtillery/Reporting/Templates/reportTemplate.html`.
+- Every result stays in memory until the report is written, so `DataPoint` holds only fields that the console summary or the report reads; `DataPointTests` keeps it at 80 bytes or less.
+- HTML report generation is in `src/SharpArtillery/Reporting/HtmlReport.cs` and fills placeholders in the embedded template `src/SharpArtillery/Reporting/Templates/reportTemplate.html`. `PrepareReportData` makes one pass over the results plus one sort of the OK latencies; `HtmlReportOnePassTests` compares its numbers with the earlier LINQ version (`tests/SharpArtillery.Tests/ReferenceReport.cs`).
+- The charts are Chart.js 4.5.1 (MIT), vendored unchanged as the embedded resource `Reporting/Templates/chart.umd.min.js` and written into the report at `<# CHART JS #>`, so a report needs no network. The tables are plain HTML built with `textContent`.
 
 ## Tests
 

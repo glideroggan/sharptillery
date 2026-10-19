@@ -1,4 +1,5 @@
 using System.Net;
+using System.Runtime.CompilerServices;
 using SharpArtillery.Models;
 using Xunit;
 
@@ -36,5 +37,13 @@ public class DataPointTests
         var dp = new DataPoint { Status = HttpStatusCode.OK, Error = "" };
 
         Assert.False(dp.IsError());
+    }
+
+    // A run keeps every result in memory until the report is written, so the struct's size is
+    // most of the tool's peak memory (sharptillery#583: about 150 bytes, with duplicate times).
+    [Fact]
+    public void A_data_point_is_at_most_80_bytes()
+    {
+        Assert.InRange(Unsafe.SizeOf<DataPoint>(), 1, 80);
     }
 }
