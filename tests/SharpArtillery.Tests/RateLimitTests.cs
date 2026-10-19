@@ -177,4 +177,29 @@ public class RateLimitTests
             @"target 100 req/s, reached \d+ req/s\. 1 client at [\d.]+ ms per request can do at most \d+ req/s",
             output);
     }
+
+    // Pins slice 8: auto-tune adds clients to the -c the run starts with, and the line must name the count
+    // the run ended with. A line that named -c would say "1 client" here.
+    [Fact]
+    [Trait("slice", "8")]
+    public async Task The_shortfall_line_names_the_clients_auto_tune_added()
+    {
+        var stub = Answering(TimeProvider.System, TimeSpan.FromMilliseconds(50));
+        using var factory = new StubHttpClientFactory(stub);
+        var flags = new Configs.ArtilleryConfig
+        {
+            Target = Target,
+            Vu = 1,
+            Duration = TimeSpan.FromSeconds(1),
+            ConstantRps = 1000,
+            AutoTuneMaxRps = true,
+            AutoTuneMaxClients = 4,
+            AutoTuneStep = 3,
+            AutoTuneInterval = TimeSpan.FromMilliseconds(100)
+        };
+
+        var output = await CaptureConsoleAsync(() => new MainService(NullLoggerFactory.Instance).Run(flags, factory));
+
+        Assert.Matches(@"Rate: target 1000 req/s, reached \d+ req/s\. 4 clients at [\d.]+ ms per request", output);
+    }
 }

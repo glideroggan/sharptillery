@@ -276,6 +276,49 @@ public class CsvReportTests
         Assert.Contains("broken.csv", error.Message);
     }
 
+    /// <summary>A writer that takes its first writes and then fails every write, as a disk that fills mid-run does.</summary>
+    private sealed class FailingAfterWriter : TextWriter
+    {
+        private readonly int _writesBeforeFailure;
+        private int _writes;
+
+        public FailingAfterWriter(int writesBeforeFailure) => _writesBeforeFailure = writesBeforeFailure;
+
+        public override Encoding Encoding => Encoding.UTF8;
+
+        public override void Write(char value) => TakeWrite();
+
+        public override void Write(string? value) => TakeWrite();
+
+        public override void Flush()
+        {
+            if (_writes >= _writesBeforeFailure) throw new IOException("disk full");
+        }
+
+        private void TakeWrite()
+        {
+            if (_writes++ >= _writesBeforeFailure) throw new IOException("disk full");
+        }
+    }
+
+    // Pins slice 8: the header and three rows are written, then the disk fills. The run still collects every
+    // result, and the report says which file is incomplete when it closes.
+    [Fact]
+    [Trait("slice", "8")]
+    public async Task A_write_that_fails_mid_run_keeps_every_result_and_close_names_the_file()
+    {
+        using var csv = new CsvReport(new FailingAfterWriter(writesBeforeFailure: 4), "midrun.csv");
+        var stub = StubHttpHandler.Returning(HttpStatusCode.OK);
+        using var factory = new StubHttpClientFactory(stub);
+        using var manager = new Manager(factory, NullLoggerFactory.Instance) { Csv = csv };
+
+        await RunPhaseAsync(manager, new Settings { Target = Target, Vu = 1, MaxRequests = 8 });
+
+        Assert.Equal(8, manager.Results.Count);
+        var error = Assert.Throws<IOException>(() => csv.Close());
+        Assert.Contains("midrun.csv", error.Message);
+    }
+
     [Fact]
     [Trait("slice", "6")]
     public void The_csv_extension_is_dot_csv_whatever_the_case()
