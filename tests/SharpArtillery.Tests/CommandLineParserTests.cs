@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using Microsoft.Extensions.Hosting;
 using Xunit;
@@ -101,6 +102,19 @@ public class CommandLineValidatorTests
     public void Valid_arguments_have_no_errors(params string[] args)
     {
         Assert.Empty(Errors(args));
+    }
+
+    // Red for slice 8: the folder was missing, so the run started and failed with DirectoryNotFoundException
+    // after the parse, instead of one line before any request.
+    [Fact]
+    [Trait("slice", "8")]
+    public void A_report_in_a_folder_that_does_not_exist_is_a_parse_error()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "sharptillery-missing-" + Guid.NewGuid().ToString("N"));
+
+        var error = Assert.Single(Errors("-t", "http://localhost/x", "-n", "1", "-o", Path.Combine(folder, "report")));
+        Assert.Contains(folder, error);
+        Assert.Contains("does not exist", error);
     }
 
     [Fact]

@@ -47,6 +47,9 @@ internal sealed partial class YamlHelper
                 .Build();
             // An empty file has no root; the run then reports what is missing.
             root = deserializer.Deserialize<ConfigRoot?>(text) ?? new ConfigRoot();
+            // A bare "settings:" key deserializes to null. It reads as empty settings, so the run reports
+            // the missing target instead of dereferencing null.
+            root.Settings ??= new ConfigSettings();
         }
         catch (YamlException e)
         {
@@ -117,10 +120,27 @@ internal sealed partial class YamlHelper
                        "supported (weighted scenarios are not). Keep one under scenarios.");
         }
 
-        // A bare "settings:" key leaves Settings null.
         if (root.Settings?.Report is { } report && !IsSupportedReportType(report))
         {
             errors.Add($"YAML file '{path}': settings.report: Unsupported report type: '{report}'. Use html or csv.");
+        }
+
+        // A phase needs users and an end. A request count of zero or less is no count, as in the run.
+        var phases = root.GetPhases() ?? new List<Phase>();
+        for (var i = 0; i < phases.Count; i++)
+        {
+            var phase = phases[i];
+            var label = phase?.Name is { Length: > 0 } name ? $"Phase '{name}'" : $"Phase {i + 1} (unnamed)";
+            if (phase is null)
+            {
+                errors.Add($"YAML file '{path}': Phase {i + 1} is empty. Give it vu, and duration or requests.");
+                continue;
+            }
+
+            if (phase.Vu < 1)
+                errors.Add($"YAML file '{path}': {label} needs vu of at least 1.");
+            if (phase.Duration == null && phase.Requests is not > 0)
+                errors.Add($"YAML file '{path}': {label} needs duration or requests.");
         }
 
         return errors;

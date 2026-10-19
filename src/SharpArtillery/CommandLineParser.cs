@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Globalization;
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
@@ -133,7 +134,8 @@ internal static class CommandLineParser
         rootCommand.Options.Add(autoTuneErrorOption);
 
         // Add validators
-        AddValidators(rootCommand, targetOption, maxRequestsOption, durationOption, yamlOption, autoTuneOption);
+        AddValidators(rootCommand, targetOption, maxRequestsOption, durationOption, yamlOption, autoTuneOption,
+            rpsOption, outputOption, extensionOption);
         AddValueValidators(rootCommand, methodOption, bodyOption, headerOption, extensionOption,
             autoTuneMaxOption, autoTuneStepOption, autoTuneIntervalOption, autoTuneErrorOption);
 
@@ -173,7 +175,10 @@ internal static class CommandLineParser
         Option<int?> maxRequestsOption,
         Option<TimeSpan?> durationOption,
         Option<string?> yamlOption,
-        Option<bool> autoTuneOption)
+        Option<bool> autoTuneOption,
+        Option<int?> rpsOption,
+        Option<string?> outputOption,
+        Option<string> extensionOption)
     {
         // -n and -d count as given when typed, even with a value that cannot be parsed: the parser
         // reports that value itself, and these checks must not add "missing" on top of it.
@@ -229,14 +234,35 @@ internal static class CommandLineParser
             }
         });
 
-        // The YAML file is read at parse time, so a key the run would ignore, or a file that cannot
-        // be read, stops the command before any request is sent.
+        // The YAML file is read at parse time, once, so a key the run would ignore, or a file that cannot
+        // be read, stops the command before any request is sent. -r and -o are checked against that read.
         rootCommand.Validators.Add(result =>
         {
             var yaml = ValueOrDefault(result, yamlOption);
-            if (string.IsNullOrEmpty(yaml)) return;
-            foreach (var error in YamlHelper.Load(yaml).Errors)
-                result.AddError(error);
+            ConfigRoot? config = null;
+            if (!string.IsNullOrEmpty(yaml))
+            {
+                var loaded = YamlHelper.Load(yaml);
+                config = loaded.Config;
+                foreach (var error in loaded.Errors)
+                    result.AddError(error);
+
+                // A flow run has no rate schedule, so -r would be dropped without a word; refuse it instead.
+                var flow = config?.Scenarios is { Count: > 0 } scenarios ? scenarios[0]?.Flow : null;
+                if (loaded.Errors.Count == 0 && Given(result, rpsOption) &&
+                    flow is { Count: > 0 } && MainService.IsFlowModeRequired(flow))
+                {
+                    result.AddError("-r/--rps is not supported with a flow of several steps, a think step or a " +
+                                    "capture: the flow runs each user on its own, without a rate schedule. " +
+                                    "Use -r with a single request, or leave it out.");
+                }
+            }
+
+            var output = ValueOrDefault(result, outputOption);
+            if (string.IsNullOrEmpty(output)) return;
+            var typedExtension = Typed(result, extensionOption, out var extension) ? extension : null;
+            var folderError = ReportFolderError(output, typedExtension, config);
+            if (folderError != null) result.AddError(folderError);
         });
 
         // Auto-tune requires duration mode
@@ -460,6 +486,30 @@ internal static class CommandLineParser
     /// </summary>
     internal static string ReportType(string? typedExtension, ConfigRoot? yaml) =>
         typedExtension ?? yaml?.Settings?.Report ?? "html";
+
+    /// <summary>
+    /// Why the report named by <c>-o</c> cannot be written, or null when it can. The report is written after
+    /// the run, so a folder that does not exist is refused here, before any request is sent.
+    /// </summary>
+    private static string? ReportFolderError(string output, string? typedExtension, ConfigRoot? yaml)
+    {
+        var reportType = ReportType(typedExtension, yaml);
+        // An unknown report type has its own error from -e or settings.report.
+        if (!YamlHelper.IsSupportedReportType(reportType)) return null;
+
+        var file = output + YamlHelper.GetReportExtension(reportType);
+        try
+        {
+            var folder = Path.GetDirectoryName(Path.GetFullPath(file));
+            return folder != null && !Directory.Exists(folder)
+                ? $"Report folder '{folder}' does not exist, so '{file}' cannot be written. Create the folder or change -o/--output."
+                : null;
+        }
+        catch (Exception e) when (e is ArgumentException or NotSupportedException)
+        {
+            return $"Report name (-o/--output) '{output}' is not a valid file path.";
+        }
+    }
 
     /// <summary>
     /// Adds each <c>Name:Value</c> header to <paramref name="target"/>, splitting at the first colon

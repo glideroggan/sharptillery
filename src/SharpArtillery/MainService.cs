@@ -165,7 +165,7 @@ public sealed class MainService
     /// - Any step has captures (response extraction)
     /// - Any step is a think step
     /// </summary>
-    private static bool IsFlowModeRequired(List<FlowStep> flowSteps)
+    internal static bool IsFlowModeRequired(List<FlowStep> flowSteps)
     {
         // Multiple steps always requires flow mode
         if (flowSteps.Count > 1)
