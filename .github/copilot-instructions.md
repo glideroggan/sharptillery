@@ -39,7 +39,8 @@ Core flow:
 ## Reporting and results
 
 - Results are `DataPoint` structs (`src/SharpArtillery/Models/DataPoint.cs`). HTML reporting groups into 1-second buckets using `DataPoint.RequestTimeLine` and uses `DataPoint.PhaseName` when present.
-- Every result stays in memory until the report is written, so `DataPoint` holds only fields that the console summary or the report reads; `DataPointTests` keeps it at 80 bytes or less.
+- Every result stays in memory until the report is written, so `DataPoint` holds only fields that the console summary or the report reads; `DataPointTests` keeps it at 72 bytes or less.
+- `-e csv` (`src/SharpArtillery/Reporting/CsvReport.cs`) writes one row per result as the run reads it, through `Manager.Csv` (blast mode) and `DrainResults` in `MainService` (flow mode, once a second). The file is opened before the first request; a failed write is reported when the report closes, and the run goes on. Excel output was removed (no `MyExcel`, no OpenXml).
 - HTML report generation is in `src/SharpArtillery/Reporting/HtmlReport.cs` and fills placeholders in the embedded template `src/SharpArtillery/Reporting/Templates/reportTemplate.html`. `PrepareReportData` makes one pass over the results plus one sort of the OK latencies; `HtmlReportOnePassTests` compares its numbers with the earlier LINQ version (`tests/SharpArtillery.Tests/ReferenceReport.cs`).
 - The charts are Chart.js 4.5.1 (MIT), vendored unchanged as the embedded resource `Reporting/Templates/chart.umd.min.js` and written into the report at `<# CHART JS #>`, so a report needs no network. The tables are plain HTML built with `textContent`.
 

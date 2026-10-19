@@ -34,7 +34,6 @@ No open items: the YAML phase and flow work listed here is done, see Done.
 
 - [ ] Implement `ConstantRps` end-to-end or remove the flag, and document the chosen behaviour (`src/SharpArtillery/Manager.cs`).
 - [ ] Improve auto-tune to converge on a stable client count (supports backing off, not only scaling up) (`src/SharpArtillery/Manager.cs`).
-- [ ] Re-enable Excel reporting (`.xlsx`) and remove interactive prompts from the export path by adding a quiet mode flag (`src/SharpArtillery/MainService.cs`, `src/SharpArtillery/Reporting/MyExcel.cs`).
 
 ## Diagnostics and observability
 
@@ -56,9 +55,12 @@ No open items: the YAML phase and flow work listed here is done, see Done.
 ### P3 - Cleanup (low priority)
 
 - **BUG-001: IDisposable cosmetic issue.** `Manager.cs` implements `IDisposable`, but this is a CLI tool and the OS reclaims resources on exit anyway. Not a real bug.
-- **DEAD-002: Excel reporting disabled.** `MainService.WriteReportAsync` throws `NotImplementedException` for the `.xlsx` extension. Decision needed: implement or remove the option.
 
 ## Done
+
+### Reporting
+
+- [x] Excel (`.xlsx`) reporting removed (DEAD-002): `-e csv` writes one row per request as the run reads its results (`src/SharpArtillery/Reporting/CsvReport.cs`).
 
 ### YAML scenarios
 

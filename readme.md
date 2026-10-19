@@ -36,8 +36,8 @@ Use `-n` instead of `-d` to send a fixed number of requests. Use `-d` or `-n`, n
 | `-m, --method` | HTTP method: GET, POST, PUT, DELETE, PATCH, HEAD or OPTIONS (default GET); any other value is an error |
 | `-b, --body` | JSON body content; single quotes may stand for double quotes around strings. Invalid JSON is an error |
 | `-H, --header` | Header as `Name:Value`, can be repeated. A value without a colon or without a name is an error. `Content-*` headers (such as `Content-Type`) go on the request body |
-| `-o, --output` | Report name without extension (writes an HTML report) |
-| `-e, --extension` | Report type, `html` (the only one for now); any other value is an error |
+| `-o, --output` | Report name without extension: an HTML report (`name.html`), or a CSV file (`name.csv`) with `-e csv` |
+| `-e, --extension` | Report type: `html` (default) or `csv`; any other value is an error. `csv` has one row per request, written while the run goes: `timeline_ms,phase,status,latency_ms,error_type,response_bytes`. `timeline_ms` is when the answer was processed on the run's timeline, the same time the HTML report plots; `status` is 0 when there was no response |
 | `-y, --yaml` | Run a YAML scenario file (see below) |
 | `-r, --rps` | Target requests per second, spread across the clients |
 | `-A, --autotune` | Find the highest sustainable RPS (duration mode only) |
@@ -82,7 +82,7 @@ The file is checked before any request is sent. A key that is not in the list be
 |-----|---------|
 | `settings.target` | Base URL; each step's `url` is added to it |
 | `settings.timeout` | Per-request timeout in seconds (replaces `-T`) |
-| `settings.report` | Report type, as `-e`: `html` is the only one. A typed `-e` wins, and `-o` still turns the report on |
+| `settings.report` | Report type, as `-e`: `html` or `csv`. A typed `-e` wins, and `-o` still turns the report on |
 | `phases` | Run one after another. Each has `name`, `vu` (users) and either `duration` (seconds) or `requests` |
 | `requests` | The total for the phase, shared by its users (`requests: 2` with `vu: 5` sends 2). Think steps do not count |
 | `duration` | Ends the phase when it runs out, also in the middle of a step: a request still waiting is counted as "cancelled at phase end", not as an error |
